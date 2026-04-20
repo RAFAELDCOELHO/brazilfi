@@ -17,38 +17,39 @@ pip install brazilfi
 ## Uso rápido
 
 ```python
-from brazilfi import Bacen
+from brazilfi import Bacen, IBGE, TesouroDireto
 
-bc = Bacen()
+# Bacen
+selic = Bacen().selic(last=30).to_dataframe()
 
-# SELIC últimos 30 dias
-selic = bc.selic(last=30)
-print(selic.to_dataframe())
+# IBGE
+pib = IBGE().pib(last=8).to_dataframe()
+desemprego = IBGE().desemprego(last=4).to_dataframe()
 
-# IPCA acumulado 12 meses
-ipca = bc.ipca(last=12, acum_12m=True)
-
-# Qualquer série SGS pelo código
-cambio_real_euro = bc.series(code=21619, last=100, name="Euro/BRL")
+# Tesouro Direto
+bonds = TesouroDireto().available_dataframe()
+historico_ipca = TesouroDireto().history(bond_type="IPCA+", maturity=2029)
 ```
 
 ## CLI
 
 ```bash
 brazilfi selic --last 30
-brazilfi ipca --acum
-brazilfi dolar --last 7
+brazilfi pib --last 4
+brazilfi desemprego
+brazilfi ipca --source ibge
+brazilfi tesouro
 ```
 
 ## Providers
 
 | Provider | Status | Cobertura |
 |----------|--------|-----------|
-| Bacen (SGS) | v0.1 | SELIC, CDI, IPCA, IGP-M, câmbio |
-| IBGE | v0.2 | PIB, PNAD, séries macro |
-| Tesouro Direto | v0.3 | Preços e taxas de títulos |
-| B3 | v0.4 | Cotações, histórico, opções |
-| CVM | v0.5 | Fundos, DFPs |
+| Bacen (SGS) | ✅ v0.1 | SELIC, CDI, IPCA, IGP-M, câmbio |
+| IBGE (SIDRA) | ✅ v0.2 | PIB, PNAD, IPCA, população |
+| Tesouro Direto | ✅ v0.2 | Títulos disponíveis + histórico |
+| B3 | 🚧 v0.3 | Cotações, histórico, opções |
+| CVM | 🔜 v0.4 | Fundos, DFPs |
 
 ## Contribuindo
 

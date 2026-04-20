@@ -1,9 +1,17 @@
-from brazilfi.core.exceptions import BrazilFiError, ProviderError, RateLimitError
+from brazilfi.core.exceptions import (
+    BrazilFiError,
+    DataNotFoundError,
+    ProviderError,
+    RateLimitError,
+)
 from brazilfi.core.http_client import HttpClient
-from brazilfi.core.models import SeriesPoint, TimeSeries
+from brazilfi.core.models import Bond, BondQuote, SeriesPoint, TimeSeries
 
 __all__ = [
+    "Bond",
+    "BondQuote",
     "BrazilFiError",
+    "DataNotFoundError",
     "HttpClient",
     "ProviderError",
     "RateLimitError",

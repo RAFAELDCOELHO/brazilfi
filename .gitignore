@@ -22,3 +22,15 @@ uv.lock
 # OS
 .DS_Store
 Thumbs.db
+
+# Claude Code
+.claude/
+src/brazilfi/.claude/
+
+# Claude Code
+.claude/
+src/brazilfi/.claude/
+
+# Claude Code
+.claude/
+src/brazilfi/.claude/

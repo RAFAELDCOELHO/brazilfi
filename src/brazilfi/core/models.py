@@ -46,3 +46,38 @@ class TimeSeries(BaseModel):
             f"TimeSeries(name={self.name!r}, source={self.source!r}, "
             f"points={len(self.points)})"
         )
+
+
+# --- Bonds (Tesouro Direto) ---
+
+
+class Bond(BaseModel):
+    """Título público disponível para compra/resgate."""
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., description="Nome comercial (ex: 'Tesouro Prefixado 2027')")
+    bond_type: str = Field(..., description="Tipo: LTN, NTN-B, NTN-F, LFT, NTN-B Principal")
+    maturity: date = Field(..., description="Data de vencimento")
+    index: str | None = Field(None, description="Indexador: SELIC, IPCA, Prefixado")
+    buy_rate: Decimal | None = Field(None, description="Taxa compra (% a.a.)")
+    sell_rate: Decimal | None = Field(None, description="Taxa venda (% a.a.)")
+    buy_price: Decimal | None = Field(None, description="Preço compra (BRL)")
+    sell_price: Decimal | None = Field(None, description="Preço venda (BRL)")
+    min_investment: Decimal | None = Field(None, description="Investimento mínimo (BRL)")
+    isin: str | None = Field(None, description="Código ISIN")
+    available: bool = Field(True, description="Está disponível para compra")
+
+
+class BondQuote(BaseModel):
+    """Ponto histórico de cotação de um título."""
+
+    model_config = ConfigDict(frozen=True)
+
+    date: date
+    bond_type: str
+    maturity: date
+    buy_rate: Decimal | None = None
+    sell_rate: Decimal | None = None
+    buy_price: Decimal | None = None
+    sell_price: Decimal | None = None
