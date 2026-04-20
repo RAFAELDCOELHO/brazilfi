@@ -12,7 +12,7 @@ import pandas as pd
 
 from brazilfi.core.exceptions import DataNotFoundError, ProviderError
 from brazilfi.core.http_client import HttpClient
-from brazilfi.core.models import Bond, BondQuote
+from brazilfi.core.models import Bond
 
 # Endpoints oficiais de CSV (taxas/preços atuais). Endpoint JSON antigo foi descontinuado.
 TESOURO_CSV_INVESTIR = (
@@ -158,7 +158,11 @@ class TesouroDireto:
             return pd.read_csv(io.StringIO(resp.text), sep=";", decimal=",", encoding="utf-8")
         except Exception:
             try:
-                return pd.read_csv(io.StringIO(resp.content.decode("latin-1")), sep=";", decimal=",")
+                return pd.read_csv(
+                    io.StringIO(resp.content.decode("latin-1")),
+                    sep=";",
+                    decimal=",",
+                )
             except Exception:
                 return pd.DataFrame()
 
