@@ -2,7 +2,7 @@
 
 > SDK Python unificado para APIs de mercados financeiros brasileiros.
 
-[![CI](https://github.com/SEU_USER/brazilfi/workflows/CI/badge.svg)](https://github.com/SEU_USER/brazilfi/actions)
+[![CI](https://github.com/RAFAELDCOELHO/brazilfi/workflows/CI/badge.svg)](https://github.com/RAFAELDCOELHO/brazilfi/actions)
 [![PyPI](https://img.shields.io/pypi/v/brazilfi.svg)](https://pypi.org/project/brazilfi/)
 [![Python](https://img.shields.io/pypi/pyversions/brazilfi.svg)](https://pypi.org/project/brazilfi/)
 
