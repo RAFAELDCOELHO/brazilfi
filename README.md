@@ -2,6 +2,7 @@
 
 # brazilfi
 
+
 **SDK Python unificado para APIs de mercados financeiros brasileiros.**
 
 Bacen · IBGE · Tesouro Direto — uma única biblioteca, uma única API.
