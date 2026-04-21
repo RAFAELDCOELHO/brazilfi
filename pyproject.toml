@@ -64,3 +64,8 @@ select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[dependency-groups]
+dev = [
+    "pandas-stubs>=3.0.0.260204",
+]
