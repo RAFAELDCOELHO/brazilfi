@@ -168,7 +168,8 @@ class TesouroDireto:
                 )
                 return df2
             except Exception:
-                return pd.DataFrame()
+                empty: pd.DataFrame = pd.DataFrame()
+                return empty
 
     @staticmethod
     def _clean_rate(val: Any) -> Decimal | None:

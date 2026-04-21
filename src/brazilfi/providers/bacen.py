@@ -125,7 +125,7 @@ class Bacen:
         # Ou: /bcdata.sgs.{code}/dados/ultimos/{N}
         if last is not None:
             path = f"bcdata.sgs.{code}/dados/ultimos/{last}"
-            params: dict = {"formato": "json"}
+            params: dict[str, Any] = {"formato": "json"}
         else:
             path = f"bcdata.sgs.{code}/dados"
             params = {"formato": "json"}
