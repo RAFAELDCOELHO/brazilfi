@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import cast
 
 import pandas as pd
-
 import typer
 from rich.console import Console
 from rich.table import Table
