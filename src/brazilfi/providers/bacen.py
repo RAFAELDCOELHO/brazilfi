@@ -1,10 +1,9 @@
 """Provider do Banco Central do Brasil (SGS + PTAX Olinda)."""
 from __future__ import annotations
 
-from typing import Any
-
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from brazilfi.core.exceptions import DataNotFoundError
 from brazilfi.core.http_client import HttpClient

@@ -157,15 +157,21 @@ class TesouroDireto:
         if resp.status_code >= 400:
             return pd.DataFrame()
         try:
-            df: pd.DataFrame = pd.read_csv(io.StringIO(resp.text), sep=";", decimal=",", encoding="utf-8")
+            df: pd.DataFrame = pd.read_csv(
+                io.StringIO(resp.text),
+                sep=";",
+                decimal=",",
+                encoding="utf-8",
+            )
             return df
         except Exception:
             try:
-                df2: pd.DataFrame = pd.read_csv(
+                df2 = pd.read_csv(
                     io.StringIO(resp.content.decode("latin-1")),
                     sep=";",
                     decimal=",",
                 )
+                assert isinstance(df2, pd.DataFrame)
                 return df2
             except Exception:
                 empty: pd.DataFrame = pd.DataFrame()
