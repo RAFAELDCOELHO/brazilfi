@@ -81,3 +81,38 @@ class BondQuote(BaseModel):
     sell_rate: Decimal | None = None
     buy_price: Decimal | None = None
     sell_price: Decimal | None = None
+
+
+# --- B3 (stocks / FIIs / ETFs / BDRs) ---
+
+
+class Quote(BaseModel):
+    """Cotação pontual de um ativo B3."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ticker: str
+    name: str
+    price: Decimal
+    change_pct: Decimal | None = None
+    day_high: Decimal | None = None
+    day_low: Decimal | None = None
+    volume: int | None = None
+    market_cap: Decimal | None = None
+    currency: str = "BRL"
+    updated_at: str | None = None
+
+
+class OHLCV(BaseModel):
+    """Candle OHLCV de histórico."""
+
+    model_config = ConfigDict(frozen=True)
+
+    date: date
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: int
+    adjusted_close: Decimal | None = None
+
