@@ -4,6 +4,6 @@ from brazilfi.providers.bacen import Bacen
 from brazilfi.providers.ibge import IBGE
 from brazilfi.providers.tesouro import TesouroDireto
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = ["B3", "IBGE", "Bacen", "TesouroDireto"]
