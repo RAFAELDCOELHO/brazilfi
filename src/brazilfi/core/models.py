@@ -74,7 +74,7 @@ class BondQuote(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    date: date
+    quote_date: date
     bond_type: str
     maturity: date
     buy_rate: Decimal | None = None

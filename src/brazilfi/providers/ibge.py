@@ -149,8 +149,8 @@ class IBGE:
         cfg = AGREGADOS[key]
         classificacao = cfg.get("classificacao")
         return self.agregado(
-            agregado=int(cfg["agregado"]),
-            variavel=int(cfg["variavel"]),
+            agregado=int(cfg["agregado"]),  # type: ignore[call-overload]
+            variavel=int(cfg["variavel"]),  # type: ignore[call-overload]
             last=last,
             classificacao=str(classificacao) if classificacao else None,
             name=str(cfg["name"]),

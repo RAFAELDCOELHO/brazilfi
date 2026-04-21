@@ -99,6 +99,8 @@ class TesouroDireto:
                     sell_rate=self._to_decimal(row.get("sell_rate")),
                     buy_price=self._to_decimal(row.get("buy_price")),
                     sell_price=self._to_decimal(row.get("sell_price")),
+                    min_investment=None,
+                    isin=None,
                     available=True,
                 ))
             except (KeyError, ValueError, TypeError, AttributeError):
@@ -106,7 +108,7 @@ class TesouroDireto:
         return bonds
 
     @staticmethod
-    def _make_name(bond_type: str, maturity) -> str:
+    def _make_name(bond_type: str, maturity: Any) -> str:
         """Constrói nome comercial a partir do tipo + ano de vencimento."""
         year = maturity.year if hasattr(maturity, "year") else int(str(maturity)[:4])
         t = bond_type.lower()
@@ -141,7 +143,7 @@ class TesouroDireto:
         return "Desconhecido"
 
     @staticmethod
-    def _to_decimal(val) -> Decimal | None:
+    def _to_decimal(val: Any) -> Decimal | None:
         if val is None or pd.isna(val):
             return None
         try:
@@ -155,19 +157,21 @@ class TesouroDireto:
         if resp.status_code >= 400:
             return pd.DataFrame()
         try:
-            return pd.read_csv(io.StringIO(resp.text), sep=";", decimal=",", encoding="utf-8")
+            df: pd.DataFrame = pd.read_csv(io.StringIO(resp.text), sep=";", decimal=",", encoding="utf-8")
+            return df
         except Exception:
             try:
-                return pd.read_csv(
+                df2: pd.DataFrame = pd.read_csv(
                     io.StringIO(resp.content.decode("latin-1")),
                     sep=";",
                     decimal=",",
                 )
+                return df2
             except Exception:
                 return pd.DataFrame()
 
     @staticmethod
-    def _clean_rate(val) -> Decimal | None:
+    def _clean_rate(val: Any) -> Decimal | None:
         if val is None or pd.isna(val):
             return None
         s = str(val).replace("%", "").replace(",", ".").strip()
@@ -177,7 +181,7 @@ class TesouroDireto:
             return None
 
     @staticmethod
-    def _clean_price(val) -> Decimal | None:
+    def _clean_price(val: Any) -> Decimal | None:
         if val is None or pd.isna(val):
             return None
         s = str(val).replace("R$", "").replace(".", "").replace(",", ".").strip()

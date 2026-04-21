@@ -1,6 +1,8 @@
 """Provider do Banco Central do Brasil (SGS + PTAX Olinda)."""
 from __future__ import annotations
 
+from typing import Any
+
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -118,7 +120,7 @@ class Bacen:
         start: str | date | None,
         end: str | date | None,
         last: int | None,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         # Endpoint: /bcdata.sgs.{code}/dados?formato=json&dataInicial=&dataFinal=
         # Ou: /bcdata.sgs.{code}/dados/ultimos/{N}
         if last is not None:
@@ -137,13 +139,13 @@ class Bacen:
                 params["dataInicial"] = self._fmt_date(today - timedelta(days=90))
                 params["dataFinal"] = self._fmt_date(today)
 
-        data = self.client.get(path, params=params)
+        data: list[dict[str, Any]] = self.client.get(path, params=params)
         if not data:
             raise DataNotFoundError(f"Série SGS {code} sem dados no período")
         return data
 
     @staticmethod
-    def _parse_sgs(data: list[dict]) -> list[SeriesPoint]:
+    def _parse_sgs(data: list[dict[str, Any]]) -> list[SeriesPoint]:
         points: list[SeriesPoint] = []
         for row in data:
             # Formato: {"data": "DD/MM/YYYY", "valor": "0.12"}
