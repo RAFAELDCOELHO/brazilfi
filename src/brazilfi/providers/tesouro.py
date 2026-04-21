@@ -5,7 +5,7 @@ import io
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pandas as pd
@@ -251,7 +251,8 @@ class TesouroDireto:
         latest_date = df["date"].max()
         latest = df[df["date"] == latest_date].copy()
         latest = latest[latest["maturity"] > latest_date]
-        return latest.sort_values(["bond_type", "maturity"]).reset_index(drop=True)
+        sorted_df = latest.sort_values(["bond_type", "maturity"]).reset_index(drop=True)
+        return cast("pd.DataFrame", sorted_df)
 
     def clear_cache(self) -> None:
         """Remove o cache local do CSV."""
