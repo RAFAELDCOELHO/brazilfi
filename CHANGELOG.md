@@ -8,9 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Planned
-- B3 provider (cotações, histórico, opções)
+- CVM provider (fundos, DFPs)
 - CLI tests
 - ANBIMA provider (curvas IMA)
+- Dividendos e fundamentalistas (BrAPI módulos)
+
+## [0.3.0] — 2026-04-20
+
+### Added
+- **B3 provider** (via BrAPI.dev): cotações ao vivo, histórico OHLCV, listagem de tickers, FIIs, BDRs, ETFs
+- New Pydantic models: `Quote`, `OHLCV`
+- CLI commands: `quote`, `history`, `tickers`
+- Free tier support (4 tickers sem token): PETR4, VALE3, ITUB4, MGLU3
+- Token opcional via `BRAZILFI_BRAPI_TOKEN` env var (grátis em https://brapi.dev/register)
+- 7 new tests (22 total, 61% coverage)
 
 ## [0.2.1] — 2026-04-20
 
@@ -37,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: lint (ruff) + type check (mypy) + tests (pytest) on Python 3.11 and 3.12
 - 5 tests, 66% coverage
 
-[Unreleased]: https://github.com/RAFAELDCOELHO/brazilfi/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/RAFAELDCOELHO/brazilfi/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.3.0
 [0.2.1]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.2.1
 [0.1.0]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.1.0

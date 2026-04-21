@@ -112,6 +112,24 @@ merged = pib.join(desemprego, how="inner")
 print(f"Correlação PIB x desemprego: {merged.corr().iloc[0,1]:.3f}")
 ```
 
+
+
+### Analisar portfólio: variação do dia em múltiplos ativos (B3)
+
+```python
+from brazilfi import B3
+
+b3 = B3()  # Lê BRAZILFI_BRAPI_TOKEN se disponível
+quotes = b3.quote(["PETR4", "VALE3", "ITUB4", "MGLU3"])
+
+for q in quotes:
+    direcao = "▲" if q.change_pct and float(q.change_pct) > 0 else "▼"
+    print(f"{q.ticker} {direcao} R$ {q.price} ({q.change_pct}%)")
+```
+
+> **Nota:** o provider B3 usa a [BrAPI.dev](https://brapi.dev). Sem token, apenas
+> 4 tickers (PETR4, VALE3, ITUB4, MGLU3). Token gratuito libera todos os ativos.
+
 ---
 
 ## Providers
@@ -121,7 +139,7 @@ print(f"Correlação PIB x desemprego: {merged.corr().iloc[0,1]:.3f}")
 | ✅ **Bacen** (SGS) | SELIC, CDI, IPCA, IGP-M, câmbio | `api.bcb.gov.br` |
 | ✅ **IBGE** (SIDRA) | PIB, PNAD, IPCA, população | `servicodados.ibge.gov.br` |
 | ✅ **Tesouro Direto** | Títulos ativos + histórico | `tesourotransparente.gov.br` |
-| 🚧 **B3** *(v0.3)* | Cotações, histórico, opções | — |
+| ✅ **B3** (BrAPI.dev) | Cotações, histórico OHLCV, listagem | `brapi.dev` |
 | 🔜 **CVM** *(v0.4)* | Fundos, DFPs | — |
 | 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA | — |
 
@@ -163,7 +181,7 @@ Princípios:
 
 ## Roadmap
 
-- **v0.3** — Provider B3 (cotações, histórico, opções)
+- **v0.4** — Provider CVM (fundos, DFPs, informes)
 - **v0.4** — Provider CVM (fundos, DFPs)
 - **v0.5** — Provider ANBIMA (debêntures, curvas de juros)
 - **v1.0** — API estável, docs completas, async nativo
