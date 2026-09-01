@@ -69,6 +69,14 @@ class Bacen:
         key = "ipca_acum_12m" if acum_12m else "ipca"
         return self._get_named(key, start=start, end=end, last=last)
 
+    def igpm(
+        self,
+        start: str | date | None = None,
+        end: str | date | None = None,
+        last: int | None = None,
+    ) -> TimeSeries:
+        return self._get_named("igpm", start=start, end=end, last=last)
+
     def dolar(
         self,
         start: str | date | None = None,
