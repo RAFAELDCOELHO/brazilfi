@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: If you use this software, please cite it using these metadata.
+type: software
+title: brazilfi
+authors:
+  - family-names: Coelho
+    given-names: Rafael D.
+    email: rafael.d.cooelho@gmail.com
+license: MIT
+repository-code: "https://github.com/RAFAELDCOELHO/brazilfi"
+url: "https://github.com/RAFAELDCOELHO/brazilfi"
+abstract: >-
+  brazilfi is a unified Python SDK for Brazilian financial market APIs. It
+  brings Bacen (SGS), IBGE (SIDRA), Tesouro Direto and B3 behind a single
+  typed interface, returning Pydantic models and pandas DataFrames, and
+  ships an integrated command-line interface.
+keywords:
+  - Python
+  - SDK
+  - Brazil
+  - financial market
+  - open data
+  - Bacen
+  - IBGE
+  - Tesouro Direto
+  - B3
+  - SELIC
+  - IPCA
+  - time series
+date-released: 2026-04-20

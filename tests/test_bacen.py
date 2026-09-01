@@ -16,6 +16,12 @@ FAKE_SELIC = [
     {"data": "03/04/2026", "valor": "0.04268"},
 ]
 
+FAKE_IGPM = [
+    {"data": "01/01/2026", "valor": "0.62"},
+    {"data": "01/02/2026", "valor": "0.85"},
+    {"data": "01/03/2026", "valor": "-0.11"},
+]
+
 
 @respx.mock
 def test_selic_last_n() -> None:
@@ -50,6 +56,32 @@ def test_ipca_acumulado_12m() -> None:
     ts = Bacen().ipca(last=6, acum_12m=True)
     assert route.called
     assert ts.code == "13522"
+
+
+@respx.mock
+def test_igpm_last_n() -> None:
+    route = respx.get(f"{SGS_BASE}/bcdata.sgs.189/dados/ultimos/3").mock(
+        return_value=httpx.Response(200, json=FAKE_IGPM)
+    )
+    ts = Bacen().igpm(last=3)
+    assert route.called
+    assert len(ts) == 3
+    assert ts.source == "bacen"
+    assert ts.code == "189"
+    df = ts.to_dataframe()
+    assert len(df) == 3
+    assert "value" in df.columns
+
+
+@respx.mock
+def test_igpm_date_range() -> None:
+    route = respx.get(url__regex=rf"{SGS_BASE}/bcdata\.sgs\.189/dados.*").mock(
+        return_value=httpx.Response(200, json=FAKE_IGPM)
+    )
+    ts = Bacen().igpm(start="2026-01-01", end="2026-03-01")
+    assert route.called
+    assert ts.code == "189"
+    assert len(ts) == 3
 
 
 @respx.mock
