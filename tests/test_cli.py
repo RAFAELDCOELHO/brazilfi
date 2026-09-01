@@ -8,7 +8,14 @@ import pandas as pd
 from typer.testing import CliRunner
 
 from brazilfi.cli import app
-from brazilfi.core.models import Bond, Quote, SeriesPoint, TimeSeries
+from brazilfi.core.models import (
+    Bond,
+    CurvePoint,
+    Quote,
+    SeriesPoint,
+    TimeSeries,
+    YieldCurve,
+)
 
 runner = CliRunner()
 
@@ -53,13 +60,47 @@ def _fake_bond() -> Bond:
     )
 
 
+def _fake_curva_ima() -> YieldCurve:
+    return YieldCurve(
+        index="IMA-B",
+        reference_date=pd.Timestamp("2026-09-01").date(),
+        source="anbima",
+        index_number=Decimal("11691.23877300"),
+        daily_change_pct=Decimal("0.1285"),
+        duration_days=1711,
+        points=[
+            CurvePoint(
+                maturity=pd.Timestamp("2027-05-15").date(),
+                bond_type="NTN-B",
+                rate=Decimal("6.6000"),
+                price=Decimal("4803.143250"),
+                weight_pct=Decimal("7.52"),
+                duration_days=170,
+                business_days=174,
+                selic_code="760199",
+                isin="BRSTNCNTB682",
+            )
+        ],
+    )
+
+
 # ---------- Help & smoke ----------
 
 
 def test_cli_help_shows_all_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for cmd in ["selic", "cdi", "dolar", "pib", "desemprego", "ipca", "tesouro", "quote"]:
+    for cmd in [
+        "selic",
+        "cdi",
+        "dolar",
+        "pib",
+        "desemprego",
+        "ipca",
+        "tesouro",
+        "quote",
+        "curva-ima",
+    ]:
         assert cmd in result.stdout
 
 
@@ -150,6 +191,18 @@ def test_tesouro(mock_td) -> None:
     result = runner.invoke(app, ["tesouro"])
     assert result.exit_code == 0
     assert "Prefixado 2027" in result.stdout
+
+
+# ---------- ANBIMA ----------
+
+
+@patch("brazilfi.cli.ANBIMA")
+def test_curva_ima(mock_anbima) -> None:
+    mock_anbima.return_value.curva_ima.return_value = _fake_curva_ima()
+    result = runner.invoke(app, ["curva-ima"])
+    assert result.exit_code == 0
+    assert "IMA-B" in result.stdout
+    assert "15/05/2027" in result.stdout
 
 
 # ---------- B3 ----------

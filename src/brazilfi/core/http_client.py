@@ -48,6 +48,40 @@ class HttpClient:
 
         raise ProviderError(f"Falha após {self.retries} tentativas: {last_exc}")
 
+    def get_text(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        encoding: str | None = None,
+    ) -> str:
+        """
+        GET síncrono com retry retornando texto puro.
+
+        Para fontes que servem CSV/TXT em vez de JSON. Use `encoding` quando o
+        servidor não declara charset (muitos endpoints brasileiros são latin-1).
+        """
+        url = self._build_url(path)
+        last_exc: Exception | None = None
+
+        with httpx.Client(
+            timeout=self.timeout, headers=self.headers, follow_redirects=True
+        ) as client:
+            for attempt in range(self.retries):
+                try:
+                    resp = client.get(url, params=params)
+                    self._check_status(resp)
+                    if encoding:
+                        return resp.content.decode(encoding, errors="replace")
+                    return resp.text
+                except (httpx.TimeoutException, httpx.NetworkError) as e:
+                    last_exc = e
+                    if attempt < self.retries - 1:
+                        import time
+
+                        time.sleep(DEFAULT_BACKOFF * (2**attempt))
+
+        raise ProviderError(f"Falha após {self.retries} tentativas: {last_exc}")
+
     async def aget(
         self, path: str, params: dict[str, Any] | None = None
     ) -> Any:
