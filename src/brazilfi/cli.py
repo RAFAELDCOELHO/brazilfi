@@ -13,6 +13,7 @@ from brazilfi.core.models import TimeSeries
 from brazilfi.providers.anbima import ANBIMA
 from brazilfi.providers.b3 import B3
 from brazilfi.providers.bacen import Bacen
+from brazilfi.providers.cvm import CVM
 from brazilfi.providers.ibge import IBGE
 from brazilfi.providers.tesouro import TesouroDireto
 
@@ -222,6 +223,124 @@ def tickers(
     for _, row in df.iterrows():
         table.add_row(*[str(row.get(c, "—"))[:30] for c in cols])
     console.print(table)
+
+
+@app.command()
+def opcoes(
+    ticker: str = typer.Argument(..., help="Ativo-objeto. Ex: PETR4"),
+    data: str = typer.Option("", "--data", help="Pregão YYYY-MM-DD (default: último publicado)"),
+    tipo: str = typer.Option("", "--tipo", help="call | put"),
+) -> None:
+    """Opções negociadas sobre um ativo (B3, COTAHIST)."""
+    df = B3().options(ticker.upper(), on=data or None, kind=tipo or None)
+    day = pd.Timestamp(df["date"].iloc[0])
+    table = Table(title=f"B3 — Opções de {ticker.upper()} ({day:%d/%m/%Y})", show_lines=False)
+    table.add_column("Série", style="cyan")
+    table.add_column("Tipo", style="yellow")
+    table.add_column("Strike", justify="right")
+    table.add_column("Vencimento", style="magenta")
+    table.add_column("Último", justify="right", style="green")
+    table.add_column("Negócios", justify="right", style="blue")
+    table.add_column("Volume", justify="right", style="blue")
+    for _, row in df.head(60).iterrows():
+        expiry = cast("pd.Timestamp", row["expiry"])
+        table.add_row(
+            str(row["ticker"]),
+            str(row["kind"]),
+            f"{row['strike']:.2f}",
+            expiry.strftime("%d/%m/%Y"),
+            f"{row['close']:.2f}",
+            f"{int(row['trades']):,}",
+            f"{row['volume']:,.2f}",
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} séries negociadas. Primeiras 60 exibidas.[/dim]")
+
+
+# ---------- CVM ----------
+
+
+@app.command()
+def fundos(
+    search: str = typer.Option("", "--search", help="Filtro na razão social"),
+    limit: int = typer.Option(20, "--limit"),
+) -> None:
+    """Classes de fundos em funcionamento (CVM)."""
+    df = CVM().fundos(search=search or None).head(limit)
+    table = Table(title="CVM — Fundos", show_lines=False)
+    table.add_column("CNPJ", style="cyan", no_wrap=True)
+    table.add_column("Nome", style="white")
+    table.add_column("Tipo", style="yellow")
+    table.add_column("PL", justify="right", style="green")
+    table.add_column("Gestor", style="white")
+    for _, row in df.iterrows():
+        pl = f"R$ {row['net_assets']:,.0f}" if pd.notna(row["net_assets"]) else "—"
+        table.add_row(
+            str(row["cnpj"]), str(row["name"])[:50], str(row["type"])[:25], pl,
+            str(row["manager"] if pd.notna(row["manager"]) else "—")[:30],
+        )
+    console.print(table)
+
+
+@app.command()
+def cotas(
+    cnpj: str = typer.Argument(..., help="CNPJ da classe do fundo"),
+    start: str = typer.Option("", "--start", help="YYYY-MM-DD (default: 3 meses atrás)"),
+    end: str = typer.Option("", "--end", help="YYYY-MM-DD (default: hoje)"),
+) -> None:
+    """Cota diária de um fundo (CVM, informe diário)."""
+    df = CVM().cotas(cnpj, start=start or None, end=end or None)
+    table = Table(title=f"CVM — Cotas {cnpj}", show_lines=False)
+    table.add_column("Data", style="cyan")
+    table.add_column("Cota", justify="right", style="green")
+    table.add_column("PL", justify="right")
+    table.add_column("Captação", justify="right", style="blue")
+    table.add_column("Resgate", justify="right", style="red")
+    table.add_column("Cotistas", justify="right")
+    for d, row in df.tail(30).iterrows():
+        dt = cast("pd.Timestamp", d)
+        table.add_row(
+            dt.strftime("%d/%m/%Y"),
+            f"{row['quota']:.6f}",
+            f"{row['net_assets']:,.2f}",
+            f"{row['inflow']:,.2f}",
+            f"{row['outflow']:,.2f}",
+            f"{int(row['shareholders']):,}",
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} dias. Últimos 30 exibidos.[/dim]")
+
+
+@app.command()
+def dfp(
+    empresa: str = typer.Argument(..., help="CNPJ ou código CVM. Ex: 1023 ou 33.000.167/0001-01"),
+    ano: int = typer.Option(..., "--ano", help="Exercício. Ex: 2025"),
+    demonstracao: str = typer.Option("DRE", "--demonstracao", help="BPA, BPP, DRE, DFC_MI..."),
+    individual: bool = typer.Option(False, "--individual", help="Individual em vez de consolidado"),
+    trimestral: bool = typer.Option(False, "--itr", help="ITR (trimestral) em vez de DFP"),
+) -> None:
+    """Demonstração financeira de uma companhia aberta (CVM)."""
+    company: str | int = int(empresa) if empresa.isdigit() and len(empresa) < 14 else empresa
+    cvm = CVM()
+    fetch = cvm.itr if trimestral else cvm.dfp
+    df = fetch(company, ano, statement=demonstracao, consolidated=not individual)
+    name = str(df["company"].iloc[0])
+    title = f"CVM — {'ITR' if trimestral else 'DFP'} {demonstracao.upper()} {ano} — {name}"
+    table = Table(title=title, show_lines=False)
+    table.add_column("Conta", style="cyan")
+    table.add_column("Descrição", style="white")
+    table.add_column("Período", style="magenta")
+    table.add_column("Valor (R$)", justify="right", style="green")
+    for _, row in df.iterrows():
+        end_ = cast("pd.Timestamp", row["period_end"])
+        table.add_row(
+            str(row["account"]),
+            str(row["description"])[:50],
+            end_.strftime("%d/%m/%Y"),
+            f"{row['value']:,.0f}",
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} contas.[/dim]")
 
 
 def main() -> None:

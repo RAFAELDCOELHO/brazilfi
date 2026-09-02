@@ -1,13 +1,15 @@
-"""Provider B3 via BrAPI.dev (cotações, histórico, listagem de tickers)."""
+"""Provider B3: cotações/histórico/listagem via BrAPI.dev; opções via COTAHIST diário da B3."""
 from __future__ import annotations
 
 import os
-from datetime import UTC, datetime
+import zipfile
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
 import pandas as pd
 
+from brazilfi.core.cache import CACHE_ROOT, cached_download
 from brazilfi.core.exceptions import DataNotFoundError, ProviderError
 from brazilfi.core.http_client import HttpClient
 from brazilfi.core.models import Quote
@@ -20,6 +22,14 @@ FREE_TIER_TICKERS = {"PETR4", "VALE3", "ITUB4", "MGLU3"}
 # Ranges e intervalos válidos no BrAPI
 VALID_RANGES = {"1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
 VALID_INTERVALS = {"1m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"}
+
+# Opções: arquivo COTAHIST diário da B3 (layout fixo de 245 colunas, latin-1).
+# Público, sem token, publicado à noite com todos os instrumentos negociados no dia.
+COTAHIST_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/{name}"
+COTAHIST_CACHE_DIR = CACHE_ROOT / "cotahist"
+COTAHIST_LOOKBACK_DAYS = 10  # quantos dias recuar procurando o último pregão publicado
+_SPOT_MARKET = "010"
+_OPTION_MARKETS = {"070": "call", "080": "put"}
 
 
 class B3:
@@ -38,6 +48,7 @@ class B3:
         >>> b3.quote(["PETR4", "VALE3", "ITUB4"])
         >>> b3.history("PETR4", range_="1y", interval="1d")
         >>> b3.list_tickers(type_="stock", limit=20)
+        >>> b3.options("PETR4")                       # cadeia de opções (sem token)
     """
 
     def __init__(
@@ -177,7 +188,110 @@ class B3:
 
         return pd.DataFrame(stocks)
 
+    # ---------- Opções ----------
+
+    def options(
+        self,
+        ticker: str,
+        on: str | date | None = None,
+        kind: str | None = None,
+    ) -> pd.DataFrame:
+        """
+        Cadeia de opções negociadas sobre `ticker` num pregão (COTAHIST diário da B3).
+
+        Não usa BrAPI nem token. Só aparecem séries que tiveram negócio no dia.
+        PETR4 e PETR3 são separadas pela classe do papel (PN/ON).
+
+        Args:
+            ticker: ativo-objeto (ex: "PETR4", "BOVA11").
+            on: data do pregão. Sem `on`, usa o último arquivo publicado — o do
+                dia sai à noite, então durante o pregão você recebe D-1.
+            kind: "call", "put" ou None (ambas).
+        """
+        ticker = ticker.upper()
+        if kind is not None and kind not in _OPTION_MARKETS.values():
+            raise ValueError('kind deve ser "call", "put" ou None')
+
+        lines, day = self._cotahist(on)
+        spot = next(
+            (ln for ln in lines if ln[24:27] == _SPOT_MARKET and ln[12:24].strip() == ticker),
+            None,
+        )
+        if spot is None:
+            raise DataNotFoundError(f"{ticker} não negociou em {day:%d/%m/%Y} (COTAHIST)")
+        klass = self._especi(spot)  # "PN" / "ON" / "CI"
+        root = ticker[:4]
+
+        rows = [
+            self._parse_option(ln, day)
+            for ln in lines
+            if ln[24:27] in _OPTION_MARKETS and ln[12:16] == root and self._especi(ln) == klass
+        ]
+        if kind:
+            rows = [r for r in rows if r["kind"] == kind]
+        if not rows:
+            raise DataNotFoundError(f"Nenhuma opção de {ticker} negociada em {day:%d/%m/%Y}")
+
+        df = pd.DataFrame(rows)
+        df["expiry"] = pd.to_datetime(df["expiry"])
+        return df.sort_values(["expiry", "kind", "strike"]).reset_index(drop=True)
+
     # ---------- Internals ----------
+
+    def _cotahist(self, on: str | date | None) -> tuple[list[str], date]:
+        """Registros de cotação (tipo 01) do COTAHIST diário e a data do pregão."""
+        if on is not None:
+            day = on if isinstance(on, date) else date.fromisoformat(on)
+            return self._read_cotahist(day), day
+        day = date.today()
+        for _ in range(COTAHIST_LOOKBACK_DAYS):
+            try:
+                return self._read_cotahist(day), day
+            except DataNotFoundError:
+                day -= timedelta(days=1)
+        raise DataNotFoundError(
+            f"Nenhum COTAHIST diário publicado nos últimos {COTAHIST_LOOKBACK_DAYS} dias"
+        )
+
+    @staticmethod
+    def _read_cotahist(day: date) -> list[str]:
+        name = f"COTAHIST_D{day:%d%m%Y}.ZIP"
+        # Pregão passado nunca muda: cache permanente.
+        path = cached_download(
+            COTAHIST_URL.format(name=name), COTAHIST_CACHE_DIR / name, max_age_days=None
+        )
+        with zipfile.ZipFile(path) as zf:
+            raw = zf.read(zf.namelist()[0]).decode("latin-1")
+        return [ln for ln in raw.splitlines() if ln.startswith("01")]
+
+    @staticmethod
+    def _especi(line: str) -> str:
+        """Primeiro token da especificação (PN, ON, CI...) — casa opção com ativo-objeto."""
+        tokens = line[39:49].split()
+        return tokens[0] if tokens else ""
+
+    @staticmethod
+    def _parse_option(line: str, day: date) -> dict[str, Any]:
+        def money(start: int, end: int) -> float:
+            return int(line[start:end]) / 100
+
+        return {
+            "date": day,
+            "ticker": line[12:24].strip(),
+            "kind": _OPTION_MARKETS[line[24:27]],
+            "strike": money(188, 201),
+            "expiry": date(int(line[202:206]), int(line[206:208]), int(line[208:210])),
+            "open": money(56, 69),
+            "high": money(69, 82),
+            "low": money(82, 95),
+            "close": money(108, 121),
+            "bid": money(121, 134),
+            "ask": money(134, 147),
+            "trades": int(line[147:152]),
+            "quantity": int(line[152:170]),
+            "volume": money(170, 188),
+            "isin": line[230:242],
+        }
 
     def _check_free_tier(self, tickers: list[str]) -> None:
         """Avisa se tentar ticker fora do free tier sem token."""

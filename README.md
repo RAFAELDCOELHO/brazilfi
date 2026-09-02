@@ -5,7 +5,7 @@
 
 **SDK Python unificado para APIs de mercados financeiros brasileiros.**
 
-Bacen · IBGE · Tesouro Direto · B3 · ANBIMA — uma única biblioteca, uma única API.
+Bacen · IBGE · Tesouro Direto · B3 · ANBIMA · CVM — uma única biblioteca, uma única API.
 
 [![PyPI](https://img.shields.io/pypi/v/brazilfi.svg?color=blue)](https://pypi.org/project/brazilfi/)
 [![Python](https://img.shields.io/pypi/pyversions/brazilfi.svg)](https://pypi.org/project/brazilfi/)
@@ -26,7 +26,7 @@ pip install brazilfi
 ## 60 segundos
 
 ```python
-from brazilfi import ANBIMA, B3, Bacen, IBGE, TesouroDireto
+from brazilfi import ANBIMA, B3, CVM, Bacen, IBGE, TesouroDireto
 
 # SELIC dos últimos 30 dias
 Bacen().selic(last=30).to_dataframe()
@@ -40,6 +40,12 @@ TesouroDireto().available_dataframe()
 # Cotação PETR4 (B3 via BrAPI)
 B3().quote("PETR4")
 
+# Opções de PETR4 negociadas no último pregão (B3, sem token)
+B3().options("PETR4")
+
+# DRE consolidada 2025 do Banco do Brasil (CVM, código CVM 1023)
+CVM().dfp(1023, 2025, statement="DRE")
+
 # Curva de juros do IMA-B (ANBIMA)
 ANBIMA().curva_ima_dataframe()
 ```
@@ -51,7 +57,10 @@ brazilfi selic --last 30
 brazilfi pib --last 8
 brazilfi tesouro
 brazilfi quote PETR4,VALE3
+brazilfi opcoes PETR4 --tipo call
 brazilfi curva-ima
+brazilfi fundos --search verde
+brazilfi dfp 1023 --ano 2025
 ```
 
 ---
@@ -67,8 +76,9 @@ Dados brasileiros estão espalhados em **APIs fragmentadas, mal documentadas e s
 | **Bacen (SGS)** | ✅ | ✅ | ❌ | ❌ |
 | **IBGE (SIDRA)** | ✅ | ❌ | ✅ | ❌ |
 | **Tesouro Direto** | ✅ | ❌ | ❌ | ❌ |
-| **B3** (cotações, OHLCV) | ✅ | ❌ | ❌ | ✅ |
+| **B3** (cotações, OHLCV, opções) | ✅ | ❌ | ❌ | ✅ |
 | **ANBIMA** (curva IMA-B) | ✅ | ❌ | ❌ | ❌ |
+| **CVM** (fundos, DFP/ITR) | ✅ | ❌ | ❌ | ❌ |
 | **Modelos tipados (Pydantic)** | ✅ | ❌ | ❌ | ❌ |
 | **CLI integrada** | ✅ | ❌ | ❌ | ❌ |
 | **Async-ready** | ✅ | ❌ | ❌ | ❌ |
@@ -156,8 +166,56 @@ for q in quotes:
     print(f"{q.ticker} {direcao} R$ {q.price} ({q.change_pct}%)")
 ```
 
-> **Nota:** o provider B3 usa a [BrAPI.dev](https://brapi.dev). Sem token, apenas
+> **Nota:** cotações e histórico usam a [BrAPI.dev](https://brapi.dev). Sem token, apenas
 > 4 tickers (PETR4, VALE3, ITUB4, MGLU3). Token gratuito libera todos os ativos.
+
+### Cadeia de opções: calls de PETR4 por vencimento (B3)
+
+```python
+from brazilfi import B3
+
+calls = B3().options("PETR4", kind="call")   # último pregão publicado, sem token
+print(calls.groupby("expiry")[["trades", "volume"]].sum())
+
+# Só as séries perto do dinheiro, num pregão específico
+spot = float(B3().price("PETR4"))
+chain = B3().options("PETR4", on="2026-09-01")
+print(chain[chain["strike"].between(spot * 0.9, spot * 1.1)])
+```
+
+> **Nota:** a fonte é o arquivo COTAHIST diário da B3 (público, fim de dia). Só aparecem
+> séries que tiveram negócio no pregão; o arquivo do dia sai à noite, então durante o pregão
+> você recebe D-1. Opções de PETR4 e PETR3 são separadas pela classe do papel (PN/ON).
+
+### Rentabilidade de um fundo pela cota diária (CVM)
+
+```python
+from brazilfi import CVM
+
+cvm = CVM()
+fundo = cvm.fundos(search="verde").iloc[0]          # cadastro (Resolução CVM 175)
+cotas = cvm.cotas(fundo["cnpj"], start="2026-01-01")
+rentab = cotas["quota"].iloc[-1] / cotas["quota"].iloc[0] - 1
+print(f"{fundo['name']}: {rentab:.2%} no ano, PL R$ {cotas['net_assets'].iloc[-1]:,.0f}")
+```
+
+### Margem líquida pela DFP (CVM)
+
+```python
+from brazilfi import CVM
+
+dre = CVM().dfp("33.000.167/0001-01", 2025, statement="DRE")   # Petrobras, consolidado
+receita = dre.loc[dre["account"] == "3.01", "value"].iloc[0]
+lucro = dre.loc[dre["account"] == "3.11", "value"].iloc[0]
+print(f"Margem líquida 2025: {lucro / receita:.1%}")
+
+# Trimestral (ITR): trimestre isolado vs acumulado no ano ficam na mesma tabela
+itr = CVM().itr(9512, 2026, statement="DRE")
+print(itr[itr["account"] == "3.01"][["period_start", "period_end", "value"]])
+```
+
+> **Nota:** `value` já vem em reais (a CVM publica em milhares). Reapresentações são
+> resolvidas automaticamente: fica só a versão mais recente de cada demonstração.
 
 ---
 
@@ -168,9 +226,9 @@ for q in quotes:
 | ✅ **Bacen** (SGS) | SELIC, CDI, IPCA, IGP-M, câmbio | `api.bcb.gov.br` |
 | ✅ **IBGE** (SIDRA) | PIB, PNAD, IPCA, população | `servicodados.ibge.gov.br` |
 | ✅ **Tesouro Direto** | Títulos ativos + histórico | `tesourotransparente.gov.br` |
-| ✅ **B3** (BrAPI.dev) | Cotações, histórico OHLCV, listagem | `brapi.dev` |
+| ✅ **B3** (BrAPI.dev + COTAHIST) | Cotações, histórico OHLCV, listagem, opções | `brapi.dev`, `bvmf.bmfbovespa.com.br` |
 | ✅ **ANBIMA** (IMA) | Curva de juros do IMA-B total | `anbima.com.br` |
-| 🔜 **CVM** *(v0.4)* | Fundos, DFPs | — |
+| ✅ **CVM** (dados abertos) | Cadastro de fundos e cias abertas, cota diária, DFP, ITR | `dados.cvm.gov.br` |
 | 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e IMA-B 5+ | — |
 
 ---
@@ -194,7 +252,11 @@ brazilfi --help
 | `quote PETR4[,VALE3]` | Cotação atual (B3) |
 | `history PETR4 [--range 1y] [--interval 1d]` | Histórico OHLCV (B3) |
 | `tickers [--type stock\|fund\|bdr] [--search X] [--limit N]` | Lista tickers (B3) |
+| `opcoes PETR4 [--data YYYY-MM-DD] [--tipo call\|put]` | Opções negociadas no pregão (B3) |
 | `curva-ima` | Curva de juros do IMA-B (ANBIMA) |
+| `fundos [--search X] [--limit N]` | Classes de fundos em funcionamento (CVM) |
+| `cotas CNPJ [--start] [--end]` | Cota diária de um fundo (CVM) |
+| `dfp EMPRESA --ano 2025 [--demonstracao DRE] [--individual] [--itr]` | DFP/ITR de uma companhia (CVM) |
 
 Erros de rede ou de dados saem como uma linha `Erro: ...` com exit code 1, sem traceback.
 
@@ -204,8 +266,8 @@ Erros de rede ou de dados saem como uma linha `Erro: ...` com exit code 1, sem t
 
 ```
 src/brazilfi/
-├── core/              # HttpClient (retry + backoff), modelos Pydantic, exceções
-├── providers/         # Bacen, IBGE, TesouroDireto, B3, ANBIMA
+├── core/              # HttpClient (retry + backoff), cache de arquivos, modelos Pydantic, exceções
+├── providers/         # Bacen, IBGE, TesouroDireto, B3, ANBIMA, CVM
 └── cli.py             # typer + rich
 ```
 
@@ -213,16 +275,19 @@ Princípios:
 
 - **Async-ready**: `HttpClient` suporta sync e async, com retry em timeout, erro de rede e 5xx.
 - **Modelos Pydantic v2**: todos os retornos são tipados e serializáveis.
-- **Cache local**: o CSV histórico do Tesouro (~15 MB) fica em `~/.cache/brazilfi/` por 24h.
-- **Sem credenciais obrigatórias**: Bacen, IBGE, Tesouro e ANBIMA são públicos. Só o B3
-  (BrAPI) pede um token gratuito para ir além dos 4 tickers do free tier.
+- **Cache local**: arquivos grandes (CSV do Tesouro, ZIPs da CVM, COTAHIST da B3) ficam em
+  `~/.cache/brazilfi/`. Download atômico; pregões passados nunca são rebaixados, o resto
+  expira em 24h.
+- **Sem credenciais obrigatórias**: Bacen, IBGE, Tesouro, ANBIMA, CVM e as opções da B3 são
+  públicos. Só cotação/histórico via BrAPI pedem um token gratuito para ir além dos 4
+  tickers do free tier.
 
 ---
 
 ## Roadmap
 
-- **v0.4** — Provider CVM (fundos, DFPs, informes)
 - **v0.5** — ANBIMA: debêntures, IMA-B 5 e IMA-B 5+
+- **v0.6** — CVM: informes de FII, composição de carteira (CDA)
 - **v1.0** — API estável, docs completas, async nativo
 
 ---
