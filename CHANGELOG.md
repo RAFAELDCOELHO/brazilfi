@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   serve o agregado 1620 em N1, e o IPCA não aceita N3 (apuração por município/RM)
 - `IBGE.agregado()` valida o nível territorial contra os metadados do SIDRA e
   levanta `ValueError` em vez de deixar a API devolver série vazia
+- Notebook de exemplo `docs/examples/01_analise_macro.ipynb`: SELIC (Bacen) + IPCA e PIB
+  (IBGE), juro real ex-post e gráfico; extra opcional `brazilfi[examples]` com matplotlib
 
 ### Planned
 - CVM provider (fundos, DFPs)
