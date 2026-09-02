@@ -5,7 +5,7 @@
 
 **SDK Python unificado para APIs de mercados financeiros brasileiros.**
 
-Bacen · IBGE · Tesouro Direto · B3 · ANBIMA · CVM — uma única biblioteca, uma única API.
+Bacen · IBGE · Tesouro Direto · B3 · ANBIMA · CVM · IPEA — uma única biblioteca, uma única API.
 
 [![PyPI](https://img.shields.io/pypi/v/brazilfi.svg?color=blue)](https://pypi.org/project/brazilfi/)
 [![Python](https://img.shields.io/pypi/pyversions/brazilfi.svg)](https://pypi.org/project/brazilfi/)
@@ -26,10 +26,16 @@ pip install brazilfi
 ## 60 segundos
 
 ```python
-from brazilfi import ANBIMA, B3, CVM, Bacen, IBGE, TesouroDireto
+from brazilfi import ANBIMA, B3, CVM, IBGE, IPEA, Bacen, TesouroDireto
 
 # SELIC dos últimos 30 dias
 Bacen().selic(last=30).to_dataframe()
+
+# Expectativas do Focus para o IPCA (mediana por ano de referência)
+Bacen().focus("IPCA")
+
+# Qualquer série do Ipeadata (IPCA mensal desde 1980)
+IPEA().serie("PRECOS12_IPCAG12").to_dataframe()
 
 # PIB trimestral
 IBGE().pib(last=8).to_dataframe()
@@ -57,6 +63,8 @@ Ou via CLI:
 
 ```bash
 brazilfi selic --last 30
+brazilfi focus IPCA
+brazilfi ipea-search "taxa de câmbio" --freq Mensal
 brazilfi pib --last 8
 brazilfi tesouro
 brazilfi quote PETR4,VALE3
@@ -77,7 +85,8 @@ Dados brasileiros estão espalhados em **APIs fragmentadas, mal documentadas e s
 
 | | brazilfi | python-bcb | sidrapy | investpy |
 |---|:---:|:---:|:---:|:---:|
-| **Bacen (SGS)** | ✅ | ✅ | ❌ | ❌ |
+| **Bacen (SGS + Focus)** | ✅ | ✅ | ❌ | ❌ |
+| **IPEA (Ipeadata)** | ✅ | ❌ | ❌ | ❌ |
 | **IBGE (SIDRA)** | ✅ | ❌ | ✅ | ❌ |
 | **Tesouro Direto** | ✅ | ❌ | ❌ | ❌ |
 | **B3** (cotações, OHLCV, opções) | ✅ | ❌ | ❌ | ✅ |
@@ -124,6 +133,32 @@ ipca_12m = float(IBGE().ipca(last=12).to_dataframe().sum().iloc[0])
 for bond in sorted(prefixados, key=lambda b: b.maturity):
     rendimento_real = float(bond.buy_rate) - ipca_12m
     print(f"{bond.name}: {bond.buy_rate}% nominal, {rendimento_real:.2f}% real")
+```
+
+### Focus vs realizado: o mercado acertou o IPCA? (Bacen)
+
+```python
+from brazilfi import Bacen
+
+bc = Bacen()
+focus = bc.focus("IPCA", start="2025-01-01")             # coleta semanal, por ano de referência
+esperado_2025 = focus[focus["reference"] == "2025"].set_index("date")["median"]
+realizado_2025 = float(bc.ipca(start="2025-01-01", end="2025-12-31").to_dataframe().add(1).prod().iloc[0] - 1) * 100
+print(f"Focus (última mediana): {esperado_2025.iloc[-1]:.2f}%  |  IPCA 2025: {realizado_2025:.2f}%")
+
+# Por reunião do Copom
+bc.focus("Selic", freq="selic")[["date", "meeting", "median"]].tail()
+```
+
+### Séries longas do Ipeadata (IPEA)
+
+```python
+from brazilfi import IPEA
+
+ipea = IPEA()
+ipea.search("câmbio", freq="Mensal")                 # catálogo filtrado localmente
+cambio = ipea.serie("BM12_ERC12").to_dataframe()     # R$/US$ comercial, média mensal, desde 1953
+ipea.dataframe("PIBPMCE")                            # séries regionais vêm com `territory`
 ```
 
 ### Correlação PIB vs desemprego
@@ -242,7 +277,8 @@ print(itr[itr["account"] == "3.01"][["period_start", "period_end", "value"]])
 
 | Provider | Cobertura | Fonte |
 |----------|-----------|-------|
-| ✅ **Bacen** (SGS) | SELIC, CDI, IPCA, IGP-M, câmbio | `api.bcb.gov.br` |
+| ✅ **Bacen** (SGS + Olinda) | SELIC, CDI, IPCA, IGP-M, câmbio; expectativas do Focus | `api.bcb.gov.br`, `olinda.bcb.gov.br` |
+| ✅ **IPEA** (Ipeadata) | ~3.600 séries macro, regionais e sociais; busca no catálogo | `ipeadata.gov.br` |
 | ✅ **IBGE** (SIDRA) | PIB, PNAD, IPCA, população | `servicodados.ibge.gov.br` |
 | ✅ **Tesouro Direto** | Títulos ativos + histórico | `tesourotransparente.gov.br` |
 | ✅ **B3** (BrAPI.dev + COTAHIST) | Cotações, histórico OHLCV, listagem, opções | `brapi.dev`, `bvmf.bmfbovespa.com.br` |
@@ -263,6 +299,9 @@ brazilfi --help
 | `selic [--last N] [--meta]` | Taxa SELIC (diária ou meta Copom) |
 | `cdi [--last N]` | CDI diário |
 | `dolar [--last N]` | Cotação dólar comercial (PTAX) |
+| `focus [IPCA] [--freq anual\|mensal\|selic] [--start]` | Expectativas do boletim Focus (Bacen) |
+| `ipea CODIGO` | Série do Ipeadata (IPEA) |
+| `ipea-search TERMO [--freq Mensal]` | Busca no catálogo do Ipeadata |
 | `ipca [--source bacen\|ibge] [--last N] [--acum] [--localidade N6[...]]` | IPCA mensal |
 | `pib [--last N]` | PIB trimestral (índice de volume) |
 | `desemprego [--last N] [--localidade N3[35]]` | Taxa de desocupação (PNAD Contínua) |
@@ -287,7 +326,7 @@ Erros de rede ou de dados saem como uma linha `Erro: ...` com exit code 1, sem t
 ```
 src/brazilfi/
 ├── core/              # HttpClient (retry + backoff), cache de arquivos, modelos Pydantic, exceções
-├── providers/         # Bacen, IBGE, TesouroDireto, B3, ANBIMA, CVM
+├── providers/         # Bacen, IBGE, TesouroDireto, B3, ANBIMA, CVM, IPEA
 └── cli.py             # typer + rich
 ```
 
@@ -298,8 +337,8 @@ Princípios:
 - **Cache local**: arquivos grandes (CSV do Tesouro, ZIPs da CVM, COTAHIST da B3) ficam em
   `~/.cache/brazilfi/`. Download atômico; pregões passados nunca são rebaixados, o resto
   expira em 24h.
-- **Sem credenciais obrigatórias**: Bacen, IBGE, Tesouro, ANBIMA, CVM e as opções da B3 são
-  públicos. Só cotação/histórico via BrAPI pedem um token gratuito para ir além dos 4
+- **Sem credenciais obrigatórias**: Bacen, IBGE, Tesouro, ANBIMA, CVM, IPEA e as opções da B3
+  são públicos. Só cotação/histórico via BrAPI pedem um token gratuito para ir além dos 4
   tickers do free tier.
 
 ---

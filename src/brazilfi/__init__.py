@@ -4,8 +4,9 @@ from brazilfi.providers.b3 import B3
 from brazilfi.providers.bacen import Bacen
 from brazilfi.providers.cvm import CVM
 from brazilfi.providers.ibge import IBGE
+from brazilfi.providers.ipea import IPEA
 from brazilfi.providers.tesouro import TesouroDireto
 
 __version__ = "0.3.0"
 
-__all__ = ["ANBIMA", "B3", "CVM", "IBGE", "Bacen", "TesouroDireto"]
+__all__ = ["ANBIMA", "B3", "CVM", "IBGE", "IPEA", "Bacen", "TesouroDireto"]

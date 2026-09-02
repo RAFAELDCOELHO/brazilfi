@@ -1,9 +1,12 @@
-"""Provider do Banco Central do Brasil (SGS + PTAX Olinda)."""
+"""Provider do Banco Central do Brasil (SGS + expectativas Focus via Olinda)."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import quote
+
+import pandas as pd
 
 from brazilfi.core.exceptions import DataNotFoundError
 from brazilfi.core.http_client import HttpClient
@@ -21,6 +24,35 @@ SGS_SERIES = {
     "euro_venda": (21619, "Euro (venda)", "BRL"),
 }
 
+# Expectativas de mercado (boletim Focus), API OData do Olinda.
+FOCUS_BASE = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata"
+FOCUS_DATASETS = {
+    "anual": "ExpectativasMercadoAnuais",
+    "mensal": "ExpectativaMercadoMensais",
+    "trimestral": "ExpectativasMercadoTrimestrais",
+    "selic": "ExpectativasMercadoSelic",
+    "inflacao_12m": "ExpectativasMercadoInflacao12Meses",
+    "top5_anual": "ExpectativasMercadoTop5Anuais",
+    "top5_mensal": "ExpectativasMercadoTop5Mensais",
+    "top5_selic": "ExpectativasMercadoTop5Selic",
+}
+SAFE_CHARS = "'"  # aspas simples do OData ficam legíveis na URL
+FOCUS_COLS = {
+    "Indicador": "indicator",
+    "IndicadorDetalhe": "detail",
+    "Data": "date",
+    "DataReferencia": "reference",
+    "Reuniao": "meeting",
+    "Suavizada": "smoothed",
+    "Media": "mean",
+    "Mediana": "median",
+    "DesvioPadrao": "std",
+    "Minimo": "min",
+    "Maximo": "max",
+    "numeroRespondentes": "respondents",
+    "baseCalculo": "base",
+}
+
 
 class Bacen:
     """
@@ -31,6 +63,8 @@ class Bacen:
         >>> df = bc.selic(last=30).to_dataframe()
         >>> df = bc.ipca(start="2023-01-01").to_dataframe()
         >>> df = bc.series(11, last=10).to_dataframe()  # código SGS genérico
+        >>> df = bc.focus("IPCA")                         # expectativas Focus (anual)
+        >>> df = bc.focus("Selic", freq="selic")          # por reunião do Copom
     """
 
     SGS_BASE = "https://api.bcb.gov.br/dados/serie"
@@ -105,7 +139,63 @@ class Bacen:
             points=points,
         )
 
+    # ---------- Focus ----------
+
+    def focus(
+        self,
+        indicador: str = "IPCA",
+        freq: str = "anual",
+        start: str | date | None = None,
+        end: str | date | None = None,
+        base: int | None = 0,
+        top: int = 10000,
+    ) -> pd.DataFrame:
+        """
+        Expectativas de mercado do boletim Focus (Olinda/OData).
+
+        Args:
+            indicador: "IPCA", "Selic", "Câmbio", "PIB Total", "IGP-M"... (como no Focus).
+            freq: "anual" (default), "mensal", "trimestral", "selic" (por reunião do
+                Copom), "inflacao_12m", "top5_anual", "top5_mensal", "top5_selic".
+            start/end: janela da data de coleta; default últimos 90 dias.
+            base: 0 = todos os respondentes dos últimos 30 dias (default), 1 = só os
+                dos últimos 5 dias, None = ambos.
+            top: máximo de linhas.
+
+        Uma linha por (data de coleta, referência). `reference` é o ano, "MM/YYYY"
+        ou a reunião do Copom conforme `freq`.
+        """
+        if freq not in FOCUS_DATASETS:
+            raise ValueError(f"freq inválida. Use uma de: {sorted(FOCUS_DATASETS)}")
+        today = date.today()
+        start_ = self._iso(start) if start else (today - timedelta(days=90)).isoformat()
+        filters = [f"Indicador eq '{indicador}'", f"Data ge '{start_}'"]
+        if end:
+            filters.append(f"Data le '{self._iso(end)}'")
+        if base is not None:
+            filters.append(f"baseCalculo eq {base}")
+        # O Olinda não aceita "+" como espaço (que é como o httpx codifica params),
+        # então a query vai montada à mão com %20.
+        options = {
+            "filter": " and ".join(filters),
+            "orderby": "Data asc",
+            "top": top,
+            "format": "json",
+        }
+        query = "&".join(f"${k}={quote(str(v), safe=SAFE_CHARS)}" for k, v in options.items())
+        data = self.client.get(f"{FOCUS_BASE}/{FOCUS_DATASETS[freq]}?{query}")
+        rows = data.get("value", []) if isinstance(data, dict) else []
+        if not rows:
+            raise DataNotFoundError(f"Focus sem dados para {indicador!r} ({freq}) desde {start_}")
+        df = pd.DataFrame(rows).rename(columns=FOCUS_COLS)
+        df["date"] = pd.to_datetime(df["date"])
+        return df.reset_index(drop=True)
+
     # ---------- Internals ----------
+
+    @staticmethod
+    def _iso(d: str | date) -> str:
+        return d if isinstance(d, str) else d.isoformat()
 
     def _get_named(
         self,

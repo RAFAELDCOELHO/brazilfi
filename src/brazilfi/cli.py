@@ -15,6 +15,7 @@ from brazilfi.providers.b3 import B3
 from brazilfi.providers.bacen import Bacen
 from brazilfi.providers.cvm import CVM
 from brazilfi.providers.ibge import IBGE
+from brazilfi.providers.ipea import IPEA
 from brazilfi.providers.tesouro import TesouroDireto
 
 app = typer.Typer(
@@ -61,6 +62,38 @@ def dolar(last: int = typer.Option(30)) -> None:
     _render_series(Bacen().dolar(last=last), "Dólar")
 
 
+@app.command()
+def focus(
+    indicador: str = typer.Argument("IPCA", help="IPCA, Selic, Câmbio, PIB Total, IGP-M..."),
+    freq: str = typer.Option("anual", "--freq", help="anual, mensal, trimestral, selic..."),
+    start: str = typer.Option("", "--start", help="Data de coleta inicial YYYY-MM-DD"),
+) -> None:
+    """Expectativas de mercado do boletim Focus (Bacen)."""
+    df = Bacen().focus(indicador, freq=freq, start=start or None)
+    table = Table(title=f"Focus — {indicador} ({freq})", show_lines=False)
+    table.add_column("Coleta", style="cyan")
+    table.add_column("Referência", style="magenta")
+    table.add_column("Mediana", justify="right", style="green")
+    table.add_column("Média", justify="right")
+    table.add_column("Mín", justify="right", style="red")
+    table.add_column("Máx", justify="right", style="blue")
+    table.add_column("Resp.", justify="right")
+    ref_col = "meeting" if "meeting" in df.columns else "reference"
+    for _, row in df.tail(40).iterrows():
+        d = cast("pd.Timestamp", row["date"])
+        table.add_row(
+            d.strftime("%d/%m/%Y"),
+            str(row.get(ref_col, "—")),
+            f"{row['median']:.2f}",
+            f"{row['mean']:.2f}",
+            f"{row['min']:.2f}",
+            f"{row['max']:.2f}",
+            str(int(row["respondents"])),
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} linhas. Últimas 40 exibidas.[/dim]")
+
+
 # ---------- IBGE ----------
 
 
@@ -102,6 +135,37 @@ def populacao(
 ) -> None:
     """População estimada (IBGE)."""
     _render_series(IBGE().populacao(last=last, localidade=localidade), "População")
+
+
+# ---------- IPEA ----------
+
+
+@app.command()
+def ipea(code: str = typer.Argument(..., help="Código da série. Ex: PRECOS12_IPCAG12")) -> None:
+    """Série do Ipeadata (IPEA)."""
+    _render_series(IPEA().serie(code), "IPEA")
+
+
+@app.command("ipea-search")
+def ipea_search(
+    term: str = typer.Argument(..., help="Texto no nome ou código"),
+    freq: str = typer.Option("", "--freq", help="Mensal, Trimestral, Anual, Diária"),
+    limit: int = typer.Option(20, "--limit"),
+) -> None:
+    """Busca séries no catálogo do Ipeadata."""
+    df = IPEA().search(term, freq=freq or None).head(limit)
+    table = Table(title=f"Ipeadata — '{term}'", show_lines=False)
+    table.add_column("Código", style="cyan", no_wrap=True)
+    table.add_column("Nome", style="white")
+    table.add_column("Freq.", style="yellow")
+    table.add_column("Unidade", style="magenta")
+    table.add_column("Fonte", style="blue")
+    for _, row in df.iterrows():
+        table.add_row(
+            str(row["code"]), str(row["name"])[:60], str(row["freq"]),
+            str(row["unit"] or ""), str(row["source"] or ""),
+        )
+    console.print(table)
 
 
 # ---------- Tesouro Direto ----------
