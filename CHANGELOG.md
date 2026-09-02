@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Bacen**: `focus(indicador, freq=...)` — expectativas de mercado do boletim Focus via
+  Olinda/OData (anual, mensal, trimestral, por reunião do Copom, inflação 12m, Top 5)
+- **IPEA provider** (Ipeadata OData): `search()` no catálogo (~3.600 séries, filtrado
+  localmente porque a API ignora `$filter`), `serie()` como `TimeSeries`, `dataframe()` com
+  território para séries regionais, `metadata()`
+- CLI: `focus`, `ipea`, `ipea-search`
 - **ANBIMA**: `curva_ima(index=...)` aceita toda a família IMA (IMA-B, IMA-B 5, IMA-B 5+,
   IRF-M, IRF-M 1, IRF-M 1+, IMA-S, IMA-GERAL, IMA-GERAL-EX-C); `debentures(on=None)` — taxas
   indicativas do mercado secundário de debêntures (arquivo diário `db{aammdd}.txt`), com

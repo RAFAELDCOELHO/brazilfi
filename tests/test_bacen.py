@@ -100,3 +100,63 @@ def test_custom_date_range() -> None:
     )
     ts = Bacen().dolar(start="2026-01-01", end="2026-04-01")
     assert len(ts) == 3
+
+
+# ---------- Focus (Olinda) ----------
+
+FOCUS_ANUAL = {
+    "value": [
+        {
+            "Indicador": "IPCA", "IndicadorDetalhe": None, "Data": "2026-08-21",
+            "DataReferencia": "2026", "Media": 5.0067, "Mediana": 5.0248, "DesvioPadrao": 0.209,
+            "Minimo": 4.3, "Maximo": 5.6, "numeroRespondentes": 120, "baseCalculo": 0,
+        },
+        {
+            "Indicador": "IPCA", "IndicadorDetalhe": None, "Data": "2026-08-28",
+            "DataReferencia": "2026", "Media": 4.99, "Mediana": 5.0, "DesvioPadrao": 0.2,
+            "Minimo": 4.3, "Maximo": 5.6, "numeroRespondentes": 118, "baseCalculo": 0,
+        },
+    ]
+}
+FOCUS_ANY = r"https://olinda\.bcb\.gov\.br/olinda/servico/Expectativas/versao/v1/odata/.*"
+
+
+@respx.mock
+def test_focus_builds_odata_query_with_percent20() -> None:
+    route = respx.get(url__regex=FOCUS_ANY).mock(return_value=httpx.Response(200, json=FOCUS_ANUAL))
+    df = Bacen().focus("IPCA", start="2026-08-01", end="2026-08-31")
+
+    url = str(route.calls[0].request.url)
+    assert "/ExpectativasMercadoAnuais?" in url
+    # O Olinda rejeita "+" como espaço: a query tem de ir com %20.
+    assert "+" not in url
+    assert "$filter=Indicador%20eq%20'IPCA'%20and%20Data%20ge%20'2026-08-01'" in url
+    assert "Data%20le%20'2026-08-31'%20and%20baseCalculo%20eq%200" in url
+    assert "$orderby=Data%20asc" in url and "$format=json" in url
+
+    assert list(df.columns[:4]) == ["indicator", "detail", "date", "reference"]
+    assert str(df["date"].iloc[-1].date()) == "2026-08-28"
+    assert df["median"].iloc[-1] == 5.0
+    assert df["respondents"].iloc[0] == 120
+
+
+@respx.mock
+def test_focus_freq_selects_dataset_and_base_none_drops_filter() -> None:
+    route = respx.get(url__regex=FOCUS_ANY).mock(return_value=httpx.Response(200, json=FOCUS_ANUAL))
+    Bacen().focus("Selic", freq="selic", base=None)
+    url = str(route.calls[0].request.url)
+    assert "/ExpectativasMercadoSelic?" in url
+    assert "baseCalculo" not in url
+    assert "Indicador%20eq%20'Selic'" in url
+
+
+def test_focus_invalid_freq_raises() -> None:
+    with pytest.raises(ValueError, match="freq"):
+        Bacen().focus("IPCA", freq="semanal")
+
+
+@respx.mock
+def test_focus_empty_raises_data_not_found() -> None:
+    respx.get(url__regex=FOCUS_ANY).mock(return_value=httpx.Response(200, json={"value": []}))
+    with pytest.raises(DataNotFoundError):
+        Bacen().focus("Indicador Inexistente")

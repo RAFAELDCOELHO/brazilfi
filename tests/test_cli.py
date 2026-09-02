@@ -395,3 +395,34 @@ def test_debentures(mock_anbima) -> None:
     assert "PETR16" in result.stdout
     assert "AALM12" not in result.stdout
     assert "01/09/2026" in result.stdout
+
+
+@patch("brazilfi.cli.Bacen")
+def test_focus(mock_bacen) -> None:
+    mock_bacen.return_value.focus.return_value = pd.DataFrame(
+        {
+            "indicator": ["IPCA"], "date": [pd.Timestamp("2026-08-28")], "reference": ["2026"],
+            "mean": [4.99], "median": [5.0], "min": [4.3], "max": [5.6], "respondents": [118],
+        }
+    )
+    result = runner.invoke(app, ["focus", "IPCA", "--freq", "anual"])
+    assert result.exit_code == 0
+    assert "28/08/2026" in result.stdout
+    mock_bacen.return_value.focus.assert_called_once_with("IPCA", freq="anual", start=None)
+
+
+@patch("brazilfi.cli.IPEA")
+def test_ipea_commands(mock_ipea) -> None:
+    mock_ipea.return_value.serie.return_value = _fake_timeseries(
+        code="PRECOS12_IPCAG12", name="IPCA", unit="% a.m."
+    )
+    assert runner.invoke(app, ["ipea", "PRECOS12_IPCAG12"]).exit_code == 0
+
+    mock_ipea.return_value.search.return_value = pd.DataFrame(
+        {"code": ["PRECOS12_IPCAG12"], "name": ["IPCA - geral"], "freq": ["Mensal"],
+         "unit": ["(% a.m.)"], "source": ["IBGE/SNIPC"]}
+    )
+    result = runner.invoke(app, ["ipea-search", "ipca", "--freq", "Mensal"])
+    assert result.exit_code == 0
+    assert "PRECOS12_IPCAG12" in result.stdout
+    mock_ipea.return_value.search.assert_called_once_with("ipca", freq="Mensal")

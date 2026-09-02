@@ -1,14 +1,14 @@
 [project]
 name = "brazilfi"
 dynamic = ["version"]
-description = "Unified Python SDK for Brazilian financial market APIs (Bacen, IBGE, Tesouro Direto, B3, ANBIMA, CVM)"
+description = "Unified Python SDK for Brazilian financial market APIs (Bacen, IBGE, Tesouro Direto, B3, ANBIMA, CVM, IPEA)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Rafael Coelho" }]
 keywords = [
     "finance", "brazil", "b3", "bovespa", "bacen", "selic", "ipca", "ibge",
-    "tesouro-direto", "anbima", "cvm", "fundos", "dfp", "opcoes", "sdk",
+    "tesouro-direto", "anbima", "cvm", "fundos", "dfp", "opcoes", "ipea", "ipeadata", "focus", "sdk",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
