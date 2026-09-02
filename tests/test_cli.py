@@ -280,3 +280,88 @@ def test_main_prints_clean_error_and_exits_1(capsys) -> None:
     assert "Erro:" in out
     assert "sem dados" in out
     assert "Traceback" not in out
+
+
+@patch("brazilfi.cli.B3")
+def test_opcoes(mock_b3) -> None:
+    mock_b3.return_value.options.return_value = pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2026-09-01").date()],
+            "ticker": ["PETRK312"],
+            "kind": ["call"],
+            "strike": [30.16],
+            "expiry": [pd.Timestamp("2026-11-19")],
+            "close": [17.06],
+            "trades": [1],
+            "volume": [51.18],
+        }
+    )
+    result = runner.invoke(app, ["opcoes", "petr4", "--data", "2026-09-01", "--tipo", "call"])
+    assert result.exit_code == 0
+    assert "PETRK312" in result.stdout
+    assert "19/11/2026" in result.stdout
+    mock_b3.return_value.options.assert_called_once_with("PETR4", on="2026-09-01", kind="call")
+
+
+# ---------- CVM ----------
+
+
+@patch("brazilfi.cli.CVM")
+def test_fundos(mock_cvm) -> None:
+    mock_cvm.return_value.fundos.return_value = pd.DataFrame(
+        {
+            "cnpj": ["60079651000140"],
+            "name": ["VERDE A&I CEDRO FII"],
+            "type": ["Classes de Cotas de Fundos FII"],
+            "net_assets": [165878600.0],
+            "manager": ["VERDE ASSET"],
+        }
+    )
+    result = runner.invoke(app, ["fundos", "--search", "verde"])
+    assert result.exit_code == 0
+    assert "60079651000140" in result.stdout
+    mock_cvm.return_value.fundos.assert_called_once_with(search="verde")
+
+
+@patch("brazilfi.cli.CVM")
+def test_cotas(mock_cvm) -> None:
+    df = pd.DataFrame(
+        {
+            "quota": [44.1, 44.2],
+            "net_assets": [1.0, 2.0],
+            "inflow": [0.0, 10.0],
+            "outflow": [0.0, 0.0],
+            "shareholders": [1, 1],
+        },
+        index=pd.to_datetime(["2026-07-30", "2026-07-31"]),
+    )
+    mock_cvm.return_value.cotas.return_value = df
+    result = runner.invoke(app, ["cotas", "00017024000153"])
+    assert result.exit_code == 0
+    assert "31/07/2026" in result.stdout
+
+
+@patch("brazilfi.cli.CVM")
+def test_dfp_parses_cvm_code_and_cnpj(mock_cvm) -> None:
+    df = pd.DataFrame(
+        {
+            "company": ["BCO BRASIL S.A."],
+            "account": ["3.01"],
+            "description": ["Receitas"],
+            "period_end": [pd.Timestamp("2025-12-31")],
+            "value": [319462104000.0],
+        }
+    )
+    mock_cvm.return_value.dfp.return_value = df
+    mock_cvm.return_value.itr.return_value = df
+
+    assert runner.invoke(app, ["dfp", "1023", "--ano", "2025"]).exit_code == 0
+    mock_cvm.return_value.dfp.assert_called_with(1023, 2025, statement="DRE", consolidated=True)
+
+    args = ["dfp", "33.000.167/0001-01", "--ano", "2026", "--itr", "--individual"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0
+    assert "ITR" in result.stdout
+    mock_cvm.return_value.itr.assert_called_with(
+        "33.000.167/0001-01", 2026, statement="DRE", consolidated=False
+    )

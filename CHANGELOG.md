@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **CVM provider** (dados abertos, sem token): `CVM().fundos()` (cadastro de classes da
+  Resolução CVM 175, com administrador/gestor do fundo-mãe), `cotas()` (informe diário:
+  cota, PL, captação, resgate, cotistas — aceita o layout antigo `CNPJ_FUNDO` e o novo
+  `CNPJ_FUNDO_CLASSE`), `companhias()` (cadastro de cias abertas), `dfp()` e `itr()`
+  (BPA, BPP, DRE, DRA, DFC, DMPL, DVA; valores já em reais; só a última reapresentação)
+- **B3**: `B3().options(ticker, on=None, kind=None)` — cadeia de opções negociadas num
+  pregão a partir do COTAHIST diário da B3 (público, sem BrAPI). Separa PETR4/PETR3 pela
+  classe do papel e recua até o último pregão publicado quando `on` é omitido
+- `core.cache.cached_download()`: download atômico com cache em disco e TTL opcional
+  (`None` = arquivo imutável), usado pela CVM e pelo COTAHIST
+- CLI: `opcoes`, `fundos`, `cotas`, `dfp` (com `--itr` e `--individual`)
 - **ANBIMA provider**: `ANBIMA().curva_ima()` — curva de juros do IMA-B total a partir do
   arquivo completo do IMA (`anbima.com.br/informacoes/ima/arqs/ima_completo.txt`)
 - New Pydantic models: `YieldCurve`, `CurvePoint`
@@ -52,8 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `rendimento-*-csv`), que nunca era chamado
 
 ### Planned
-- CVM provider (fundos, DFPs)
 - ANBIMA: IMA-B 5 e IMA-B 5+, debêntures
+- CVM: informes de FII, composição de carteira (CDA)
 - Dividendos e fundamentalistas (BrAPI módulos)
 
 ## [0.3.0] — 2026-04-20
