@@ -116,3 +116,82 @@ class OHLCV(BaseModel):
     volume: int
     adjusted_close: Decimal | None = None
 
+
+# --- Curvas de juros (ANBIMA) ---
+
+
+class CurvePoint(BaseModel):
+    """Vértice de uma curva de juros: um título indexado pelo vencimento."""
+
+    model_config = ConfigDict(frozen=True)
+
+    maturity: date = Field(..., description="Data de vencimento do título")
+    bond_type: str = Field(..., description="Tipo do título (ex: 'NTN-B')")
+    rate: Decimal = Field(..., description="Taxa indicativa (% a.a.)")
+    price: Decimal | None = Field(None, description="PU (BRL)")
+    weight_pct: Decimal | None = Field(None, description="Peso do vértice no índice (%)")
+    duration_days: int | None = Field(None, description="Duration em dias úteis")
+    business_days: int | None = Field(None, description="Prazo em dias úteis")
+    selic_code: str | None = Field(None, description="Código SELIC")
+    isin: str | None = Field(None, description="Código ISIN")
+
+
+class YieldCurve(BaseModel):
+    """Curva de juros de um índice de renda fixa numa data de referência."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    index: str = Field(..., description="Índice de origem (ex: 'IMA-B')")
+    reference_date: date = Field(..., description="Data de referência da divulgação")
+    source: str = Field(..., description="Provider de origem (anbima, ...)")
+    unit: str = Field(default="% a.a.", description="Unidade das taxas")
+    index_number: Decimal | None = Field(None, description="Número-índice do dia")
+    daily_change_pct: Decimal | None = Field(None, description="Variação diária (%)")
+    duration_days: int | None = Field(None, description="Duration do índice (dias úteis)")
+    points: list[CurvePoint]
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Converte para DataFrame pandas indexado por vencimento."""
+        columns = [
+            "bond_type",
+            "rate",
+            "price",
+            "weight_pct",
+            "duration_days",
+            "business_days",
+            "selic_code",
+            "isin",
+        ]
+        if not self.points:
+            return pd.DataFrame(columns=columns)
+        df = pd.DataFrame(
+            [
+                {
+                    "maturity": p.maturity,
+                    "bond_type": p.bond_type,
+                    "rate": float(p.rate),
+                    "price": float(p.price) if p.price is not None else None,
+                    "weight_pct": (
+                        float(p.weight_pct) if p.weight_pct is not None else None
+                    ),
+                    "duration_days": p.duration_days,
+                    "business_days": p.business_days,
+                    "selic_code": p.selic_code,
+                    "isin": p.isin,
+                }
+                for p in self.points
+            ]
+        )
+        df["maturity"] = pd.to_datetime(df["maturity"])
+        return df.set_index("maturity").sort_index()
+
+    def __len__(self) -> int:
+        return len(self.points)
+
+    def __repr__(self) -> str:
+        return (
+            f"YieldCurve(index={self.index!r}, "
+            f"reference_date={self.reference_date.isoformat()!r}, "
+            f"source={self.source!r}, points={len(self.points)})"
+        )
+

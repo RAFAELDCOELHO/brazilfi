@@ -7,10 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **ANBIMA provider**: `ANBIMA().curva_ima()` — curva de juros do IMA-B total a partir do
+  arquivo completo do IMA (`anbima.com.br/informacoes/ima/arqs/ima_completo.txt`)
+- New Pydantic models: `YieldCurve`, `CurvePoint`
+- `HttpClient.get_text()` para fontes que servem CSV/TXT em latin-1
+- CLI command: `curva-ima`
+
 ### Planned
 - CVM provider (fundos, DFPs)
-- CLI tests
-- ANBIMA provider (curvas IMA)
+- ANBIMA: IMA-B 5 e IMA-B 5+, debêntures
 - Dividendos e fundamentalistas (BrAPI módulos)
 
 ## [0.3.0] — 2026-04-20

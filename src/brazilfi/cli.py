@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from brazilfi.core.models import TimeSeries
+from brazilfi.providers.anbima import ANBIMA
 from brazilfi.providers.b3 import B3
 from brazilfi.providers.bacen import Bacen
 from brazilfi.providers.ibge import IBGE
@@ -118,8 +119,33 @@ def tesouro() -> None:
     console.print(f"[dim]Total: {len(bonds)} títulos[/dim]")
 
 
-if __name__ == "__main__":
-    app()
+# ---------- ANBIMA ----------
+
+
+@app.command("curva-ima")
+def curva_ima() -> None:
+    """Curva de juros do IMA-B (ANBIMA)."""
+    curva = ANBIMA().curva_ima()
+    ref = curva.reference_date.strftime("%d/%m/%Y")
+    table = Table(title=f"ANBIMA — {curva.index} ({ref})", show_lines=False)
+    table.add_column("Vencimento", style="magenta")
+    table.add_column("Título", style="yellow")
+    table.add_column(f"Taxa ({curva.unit})", style="green", justify="right")
+    table.add_column("PU", style="green", justify="right")
+    table.add_column("Peso (%)", style="blue", justify="right")
+    for p in curva.points:
+        table.add_row(
+            p.maturity.strftime("%d/%m/%Y"),
+            p.bond_type,
+            f"{p.rate}",
+            f"R$ {p.price}" if p.price is not None else "—",
+            f"{p.weight_pct}" if p.weight_pct is not None else "—",
+        )
+    console.print(table)
+    console.print(
+        f"[dim]Total: {len(curva)} vértices. "
+        f"Número-índice: {curva.index_number}. Fonte: {curva.source}[/dim]"
+    )
 
 
 # ---------- B3 ----------

@@ -140,8 +140,9 @@ for q in quotes:
 | ✅ **IBGE** (SIDRA) | PIB, PNAD, IPCA, população | `servicodados.ibge.gov.br` |
 | ✅ **Tesouro Direto** | Títulos ativos + histórico | `tesourotransparente.gov.br` |
 | ✅ **B3** (BrAPI.dev) | Cotações, histórico OHLCV, listagem | `brapi.dev` |
+| ✅ **ANBIMA** (IMA) | Curva de juros do IMA-B total | `anbima.com.br` |
 | 🔜 **CVM** *(v0.4)* | Fundos, DFPs | — |
-| 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA | — |
+| 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e 5+ | — |
 
 ---
 
@@ -161,6 +162,7 @@ brazilfi --help
 | `desemprego [--last N]` | Taxa de desocupação (PNAD Contínua) |
 | `populacao [--last N]` | População estimada |
 | `tesouro` | Tesouro Direto — títulos ativos |
+| `curva-ima` | Curva de juros do IMA-B (ANBIMA) |
 
 ---
 
