@@ -10,7 +10,7 @@ from brazilfi.core.http_client import HttpClient
 from brazilfi.core.models import SeriesPoint, TimeSeries
 
 # Agregados SIDRA mais usados
-AGREGADOS = {
+AGREGADOS: dict[str, dict[str, Any]] = {
     "pib_trimestral": {
         "agregado": 1620,
         "variavel": 583,
@@ -190,8 +190,8 @@ class IBGE:
         cfg = AGREGADOS[key]
         classificacao = cfg.get("classificacao")
         return self.agregado(
-            agregado=int(cfg["agregado"]),  # type: ignore[call-overload]
-            variavel=int(cfg["variavel"]),  # type: ignore[call-overload]
+            agregado=int(cfg["agregado"]),
+            variavel=int(cfg["variavel"]),
             last=last,
             localidade=localidade,
             classificacao=str(classificacao) if classificacao else None,
