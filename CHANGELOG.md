@@ -22,6 +22,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Notebook de exemplo `docs/examples/01_analise_macro.ipynb`: SELIC (Bacen) + IPCA e PIB
   (IBGE), juro real ex-post e gráfico; extra opcional `brazilfi[examples]` com matplotlib
 
+### Changed
+- `HttpClient` agora repete a requisição também em HTTP 5xx (não só timeout/rede) e segue
+  redirects em todos os métodos; `User-Agent` reflete a versão instalada
+- CLI: `desemprego`, `populacao` e `ipca --source ibge` aceitam `--localidade`
+- CLI: erros da biblioteca (`BrazilFiError`) viram `Erro: ...` + exit code 1 em vez de traceback
+- Versão única em `brazilfi.__version__` (hatch `dynamic = ["version"]`)
+- CI roda também em Python 3.13
+
+### Fixed
+- `pyproject.toml`: URLs `SEU_USER` placeholder trocadas pelo repositório real; descrição não
+  anuncia mais CVM (ainda não existe)
+- Tesouro: download do CSV histórico é atômico (`.part` + rename), com headers de navegador e
+  `follow_redirects` — um Ctrl+C no meio não deixa um cache truncado válido por 24h
+- README: subtítulo, tabela comparativa e arquitetura cobrem os 5 providers; ANBIMA e v0.4
+  não aparecem mais duplicados; "zero credentials" corrigido (B3 pede token fora do free tier)
+
+### Removed
+- Tesouro: código morto do endpoint JSON antigo (`_fetch_csv`, `_parse_bond`, URLs
+  `rendimento-*-csv`), que nunca era chamado
+
 ### Planned
 - CVM provider (fundos, DFPs)
 - ANBIMA: IMA-B 5 e IMA-B 5+, debêntures

@@ -5,7 +5,7 @@
 
 **SDK Python unificado para APIs de mercados financeiros brasileiros.**
 
-Bacen · IBGE · Tesouro Direto — uma única biblioteca, uma única API.
+Bacen · IBGE · Tesouro Direto · B3 · ANBIMA — uma única biblioteca, uma única API.
 
 [![PyPI](https://img.shields.io/pypi/v/brazilfi.svg?color=blue)](https://pypi.org/project/brazilfi/)
 [![Python](https://img.shields.io/pypi/pyversions/brazilfi.svg)](https://pypi.org/project/brazilfi/)
@@ -26,7 +26,7 @@ pip install brazilfi
 ## 60 segundos
 
 ```python
-from brazilfi import Bacen, IBGE, TesouroDireto
+from brazilfi import ANBIMA, B3, Bacen, IBGE, TesouroDireto
 
 # SELIC dos últimos 30 dias
 Bacen().selic(last=30).to_dataframe()
@@ -34,8 +34,14 @@ Bacen().selic(last=30).to_dataframe()
 # PIB trimestral
 IBGE().pib(last=8).to_dataframe()
 
-# Todos os títulos do Tesouro Direto disponíveis hoje
+# Títulos do Tesouro Direto no último pregão (D-1)
 TesouroDireto().available_dataframe()
+
+# Cotação PETR4 (B3 via BrAPI)
+B3().quote("PETR4")
+
+# Curva de juros do IMA-B (ANBIMA)
+ANBIMA().curva_ima_dataframe()
 ```
 
 Ou via CLI:
@@ -44,6 +50,8 @@ Ou via CLI:
 brazilfi selic --last 30
 brazilfi pib --last 8
 brazilfi tesouro
+brazilfi quote PETR4,VALE3
+brazilfi curva-ima
 ```
 
 ---
@@ -59,6 +67,8 @@ Dados brasileiros estão espalhados em **APIs fragmentadas, mal documentadas e s
 | **Bacen (SGS)** | ✅ | ✅ | ❌ | ❌ |
 | **IBGE (SIDRA)** | ✅ | ❌ | ✅ | ❌ |
 | **Tesouro Direto** | ✅ | ❌ | ❌ | ❌ |
+| **B3** (cotações, OHLCV) | ✅ | ❌ | ❌ | ✅ |
+| **ANBIMA** (curva IMA-B) | ✅ | ❌ | ❌ | ❌ |
 | **Modelos tipados (Pydantic)** | ✅ | ❌ | ❌ | ❌ |
 | **CLI integrada** | ✅ | ❌ | ❌ | ❌ |
 | **Async-ready** | ✅ | ❌ | ❌ | ❌ |
@@ -161,7 +171,7 @@ for q in quotes:
 | ✅ **B3** (BrAPI.dev) | Cotações, histórico OHLCV, listagem | `brapi.dev` |
 | ✅ **ANBIMA** (IMA) | Curva de juros do IMA-B total | `anbima.com.br` |
 | 🔜 **CVM** *(v0.4)* | Fundos, DFPs | — |
-| 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e 5+ | — |
+| 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e IMA-B 5+ | — |
 
 ---
 
@@ -176,35 +186,43 @@ brazilfi --help
 | `selic [--last N] [--meta]` | Taxa SELIC (diária ou meta Copom) |
 | `cdi [--last N]` | CDI diário |
 | `dolar [--last N]` | Cotação dólar comercial (PTAX) |
-| `ipca [--source bacen\|ibge] [--last N]` | IPCA mensal |
+| `ipca [--source bacen\|ibge] [--last N] [--acum] [--localidade N6[...]]` | IPCA mensal |
 | `pib [--last N] [--volume]` | PIB trimestral |
-| `desemprego [--last N]` | Taxa de desocupação (PNAD Contínua) |
-| `populacao [--last N]` | População estimada |
-| `tesouro` | Tesouro Direto — títulos ativos |
+| `desemprego [--last N] [--localidade N3[35]]` | Taxa de desocupação (PNAD Contínua) |
+| `populacao [--last N] [--localidade N6[...]]` | População estimada |
+| `tesouro` | Tesouro Direto — títulos do último pregão |
+| `quote PETR4[,VALE3]` | Cotação atual (B3) |
+| `history PETR4 [--range 1y] [--interval 1d]` | Histórico OHLCV (B3) |
+| `tickers [--type stock\|fund\|bdr] [--search X] [--limit N]` | Lista tickers (B3) |
 | `curva-ima` | Curva de juros do IMA-B (ANBIMA) |
+
+Erros de rede ou de dados saem como uma linha `Erro: ...` com exit code 1, sem traceback.
 
 ---
 
 ## Arquitetura
+
+```
 src/brazilfi/
-├── core/              # HttpClient, Pydantic models, exceptions
-├── providers/         # Bacen, IBGE, TesouroDireto
+├── core/              # HttpClient (retry + backoff), modelos Pydantic, exceções
+├── providers/         # Bacen, IBGE, TesouroDireto, B3, ANBIMA
 └── cli.py             # typer + rich
+```
 
 Princípios:
 
-- **Async-ready**: HttpClient suporta sync e async.
-- **Modelos Pydantic v2**: todos retornos são tipados e serializáveis.
-- **Cache local**: CSVs grandes são cacheados em `~/.cache/brazilfi/`.
-- **Zero credentials**: todas as APIs são públicas e gratuitas.
+- **Async-ready**: `HttpClient` suporta sync e async, com retry em timeout, erro de rede e 5xx.
+- **Modelos Pydantic v2**: todos os retornos são tipados e serializáveis.
+- **Cache local**: o CSV histórico do Tesouro (~15 MB) fica em `~/.cache/brazilfi/` por 24h.
+- **Sem credenciais obrigatórias**: Bacen, IBGE, Tesouro e ANBIMA são públicos. Só o B3
+  (BrAPI) pede um token gratuito para ir além dos 4 tickers do free tier.
 
 ---
 
 ## Roadmap
 
 - **v0.4** — Provider CVM (fundos, DFPs, informes)
-- **v0.4** — Provider CVM (fundos, DFPs)
-- **v0.5** — Provider ANBIMA (debêntures, curvas de juros)
+- **v0.5** — ANBIMA: debêntures, IMA-B 5 e IMA-B 5+
 - **v1.0** — API estável, docs completas, async nativo
 
 ---
@@ -215,7 +233,7 @@ Princípios:
 git clone https://github.com/RAFAELDCOELHO/brazilfi.git
 cd brazilfi
 uv sync --all-extras
-uv run pytest
+uv run ruff check src tests && uv run mypy src && uv run pytest
 ```
 
 ---
