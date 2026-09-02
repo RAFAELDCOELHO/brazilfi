@@ -64,12 +64,9 @@ def dolar(last: int = typer.Option(30)) -> None:
 
 
 @app.command()
-def pib(
-    last: int = typer.Option(8, help="Últimos N trimestres"),
-    volume: bool = typer.Option(False, help="Variação de volume"),
-) -> None:
-    """PIB trimestral (IBGE)."""
-    _render_series(IBGE().pib(last=last, volume=volume), "PIB")
+def pib(last: int = typer.Option(8, help="Últimos N trimestres")) -> None:
+    """PIB trimestral — índice de volume (IBGE)."""
+    _render_series(IBGE().pib(last=last), "PIB")
 
 
 @app.command()
@@ -85,12 +82,14 @@ def desemprego(
 def ipca(
     last: int = typer.Option(12),
     source: str = typer.Option("bacen", help="bacen | ibge"),
-    acum: bool = typer.Option(False, help="Acumulado 12m (Bacen)"),
+    acum: bool = typer.Option(False, help="Acumulado 12 meses"),
     localidade: str = typer.Option("N1[all]", help=f"{LOCALIDADE_HELP} (só IBGE)"),
 ) -> None:
     """IPCA — escolhe fonte (Bacen ou IBGE)."""
     if source == "ibge":
-        _render_series(IBGE().ipca(last=last, localidade=localidade), "IPCA (IBGE)")
+        _render_series(
+            IBGE().ipca(last=last, acum_12m=acum, localidade=localidade), "IPCA (IBGE)"
+        )
     else:
         _render_series(Bacen().ipca(last=last, acum_12m=acum), "IPCA (Bacen)")
 

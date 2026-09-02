@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI roda também em Python 3.13
 
 ### Fixed
+- IBGE: agregados trimestrais (PIB 1620, PNAD 4099) tinham o período `YYYYQQ` lido como
+  ano-mês — `202602` virava 2026-02-01 em vez de 2026-04-01 (2º trimestre). Novo
+  `AGREGADOS_TRIMESTRAIS` + parâmetro `trimestral` em `agregado()` para outros agregados
+- IBGE: `pib(volume=True)` (variável 584) e `ipca(indice=True)` (variável 2266) davam HTTP 500 —
+  essas variáveis não existem nos agregados 1620/7060. `pib()` agora se descreve como o que
+  sempre foi (índice de volume, média 1995 = 100, única variável do 1620) e
+  `ipca(acum_12m=True)` usa a 2265 (acumulado em 12 meses), espelhando `Bacen.ipca()`
 - `pyproject.toml`: URLs `SEU_USER` placeholder trocadas pelo repositório real; descrição não
   anuncia mais CVM (ainda não existe)
 - Tesouro: download do CSV histórico é atômico (`.part` + rename), com headers de navegador e
@@ -39,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   não aparecem mais duplicados; "zero credentials" corrigido (B3 pede token fora do free tier)
 
 ### Removed
+- **Breaking:** `IBGE.pib(volume=...)`, `IBGE.ipca(indice=...)` e `brazilfi pib --volume` —
+  estavam quebrados (HTTP 500) desde o 0.2.1
 - Tesouro: código morto do endpoint JSON antigo (`_fetch_csv`, `_parse_bond`, URLs
   `rendimento-*-csv`), que nunca era chamado
 

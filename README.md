@@ -187,7 +187,7 @@ brazilfi --help
 | `cdi [--last N]` | CDI diário |
 | `dolar [--last N]` | Cotação dólar comercial (PTAX) |
 | `ipca [--source bacen\|ibge] [--last N] [--acum] [--localidade N6[...]]` | IPCA mensal |
-| `pib [--last N] [--volume]` | PIB trimestral |
+| `pib [--last N]` | PIB trimestral (índice de volume) |
 | `desemprego [--last N] [--localidade N3[35]]` | Taxa de desocupação (PNAD Contínua) |
 | `populacao [--last N] [--localidade N6[...]]` | População estimada |
 | `tesouro` | Tesouro Direto — títulos do último pregão |
