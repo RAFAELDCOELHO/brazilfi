@@ -68,6 +68,9 @@ Dados brasileiros estão espalhados em **APIs fragmentadas, mal documentadas e s
 
 ## Exemplos reais
 
+> Notebook completo em [`docs/examples/01_analise_macro.ipynb`](docs/examples/01_analise_macro.ipynb):
+> SELIC + IPCA + PIB, juro real e gráfico (`pip install "brazilfi[examples]"`).
+
 ### Comparar SELIC vs CDI (últimos 30 dias)
 
 ```python
