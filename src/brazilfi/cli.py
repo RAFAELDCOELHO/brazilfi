@@ -133,9 +133,11 @@ def tesouro() -> None:
 
 
 @app.command("curva-ima")
-def curva_ima() -> None:
-    """Curva de juros do IMA-B (ANBIMA)."""
-    curva = ANBIMA().curva_ima()
+def curva_ima(
+    indice: str = typer.Option("IMA-B", "--indice", help="IMA-B, IMA-B 5, IMA-B 5+, IRF-M, IMA-S"),
+) -> None:
+    """Curva de juros de um índice IMA (ANBIMA)."""
+    curva = ANBIMA().curva_ima(indice)
     ref = curva.reference_date.strftime("%d/%m/%Y")
     table = Table(title=f"ANBIMA — {curva.index} ({ref})", show_lines=False)
     table.add_column("Vencimento", style="magenta")
@@ -156,6 +158,46 @@ def curva_ima() -> None:
         f"[dim]Total: {len(curva)} vértices. "
         f"Número-índice: {curva.index_number}. Fonte: {curva.source}[/dim]"
     )
+
+
+@app.command()
+def debentures(
+    data: str = typer.Option("", "--data", help="Dia útil YYYY-MM-DD (default: último publicado)"),
+    search: str = typer.Option("", "--search", help="Filtro no código ou emissor"),
+    indexador: str = typer.Option("", "--indexador", help="DI +, IPCA +, PREFIXADO, % DI"),
+) -> None:
+    """Mercado secundário de debêntures (ANBIMA)."""
+    df = ANBIMA().debentures(on=data or None)
+    if search:
+        mask = df["code"].str.contains(search, case=False) | df["issuer"].str.contains(
+            search, case=False
+        )
+        df = df[mask]
+    if indexador:
+        df = df[df["indexer"].str.upper() == indexador.upper()]
+    day = pd.Timestamp(df["date"].iloc[0]) if len(df) else None
+    title = f"ANBIMA — Debêntures ({day:%d/%m/%Y})" if day is not None else "ANBIMA — Debêntures"
+    table = Table(title=title, show_lines=False)
+    table.add_column("Código", style="cyan", no_wrap=True)
+    table.add_column("Emissor", style="white")
+    table.add_column("Vencimento", style="magenta")
+    table.add_column("Indexador", style="yellow")
+    table.add_column("Taxa ind.", justify="right", style="green")
+    table.add_column("PU", justify="right")
+    table.add_column("Duration", justify="right", style="blue")
+    for _, row in df.head(60).iterrows():
+        mat = row["maturity"]
+        table.add_row(
+            str(row["code"]),
+            str(row["issuer"])[:35],
+            mat.strftime("%d/%m/%Y") if pd.notna(mat) else "—",
+            str(row["index"]),
+            f"{row['indicative_rate']:.4f}" if pd.notna(row["indicative_rate"]) else "—",
+            f"{row['price']:,.2f}" if pd.notna(row["price"]) else "—",
+            f"{row['duration']:,.0f}" if pd.notna(row["duration"]) else "—",
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} papéis. Primeiros 60 exibidos.[/dim]")
 
 
 # ---------- B3 ----------

@@ -46,8 +46,11 @@ B3().options("PETR4")
 # DRE consolidada 2025 do Banco do Brasil (CVM, código CVM 1023)
 CVM().dfp(1023, 2025, statement="DRE")
 
-# Curva de juros do IMA-B (ANBIMA)
+# Curva de juros do IMA-B (ANBIMA) — ou "IMA-B 5+", "IRF-M", "IMA-S"...
 ANBIMA().curva_ima_dataframe()
+
+# Debêntures no mercado secundário (ANBIMA), último dia útil
+ANBIMA().debentures()
 ```
 
 Ou via CLI:
@@ -58,7 +61,8 @@ brazilfi pib --last 8
 brazilfi tesouro
 brazilfi quote PETR4,VALE3
 brazilfi opcoes PETR4 --tipo call
-brazilfi curva-ima
+brazilfi curva-ima --indice "IMA-B 5+"
+brazilfi debentures --indexador "IPCA +"
 brazilfi fundos --search verde
 brazilfi dfp 1023 --ano 2025
 ```
@@ -77,7 +81,7 @@ Dados brasileiros estão espalhados em **APIs fragmentadas, mal documentadas e s
 | **IBGE (SIDRA)** | ✅ | ❌ | ✅ | ❌ |
 | **Tesouro Direto** | ✅ | ❌ | ❌ | ❌ |
 | **B3** (cotações, OHLCV, opções) | ✅ | ❌ | ❌ | ✅ |
-| **ANBIMA** (curva IMA-B) | ✅ | ❌ | ❌ | ❌ |
+| **ANBIMA** (curvas IMA, debêntures) | ✅ | ❌ | ❌ | ❌ |
 | **CVM** (fundos, DFP/ITR) | ✅ | ❌ | ❌ | ❌ |
 | **Modelos tipados (Pydantic)** | ✅ | ❌ | ❌ | ❌ |
 | **CLI integrada** | ✅ | ❌ | ❌ | ❌ |
@@ -187,6 +191,21 @@ print(chain[chain["strike"].between(spot * 0.9, spot * 1.1)])
 > séries que tiveram negócio no pregão; o arquivo do dia sai à noite, então durante o pregão
 > você recebe D-1. Opções de PETR4 e PETR3 são separadas pela classe do papel (PN/ON).
 
+### Spread de crédito: debêntures IPCA+ contra a NTN-B de referência (ANBIMA)
+
+```python
+from brazilfi import ANBIMA
+
+an = ANBIMA()
+deb = an.debentures()                                   # último dia útil
+ipca = deb[deb["indexer"] == "IPCA +"].dropna(subset=["indicative_rate", "ntnb_reference"])
+
+ntnb = an.curva_ima_dataframe("IMA-B")["rate"]          # taxa indicativa por vencimento
+ipca["ntnb_rate"] = ipca["ntnb_reference"].map(ntnb)
+ipca["spread_bps"] = (ipca["indicative_rate"] - ipca["ntnb_rate"]) * 100
+print(ipca.sort_values("spread_bps", ascending=False)[["code", "issuer", "maturity", "spread_bps"]].head(10))
+```
+
 ### Rentabilidade de um fundo pela cota diária (CVM)
 
 ```python
@@ -227,7 +246,7 @@ print(itr[itr["account"] == "3.01"][["period_start", "period_end", "value"]])
 | ✅ **IBGE** (SIDRA) | PIB, PNAD, IPCA, população | `servicodados.ibge.gov.br` |
 | ✅ **Tesouro Direto** | Títulos ativos + histórico | `tesourotransparente.gov.br` |
 | ✅ **B3** (BrAPI.dev + COTAHIST) | Cotações, histórico OHLCV, listagem, opções | `brapi.dev`, `bvmf.bmfbovespa.com.br` |
-| ✅ **ANBIMA** (IMA) | Curva de juros do IMA-B total | `anbima.com.br` |
+| ✅ **ANBIMA** | Curvas de toda a família IMA (IMA-B, IMA-B 5/5+, IRF-M, IMA-S, IMA-GERAL), debêntures no secundário | `anbima.com.br` |
 | ✅ **CVM** (dados abertos) | Cadastro de fundos e cias abertas, cota diária, DFP, ITR | `dados.cvm.gov.br` |
 | 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e IMA-B 5+ | — |
 
@@ -253,7 +272,8 @@ brazilfi --help
 | `history PETR4 [--range 1y] [--interval 1d]` | Histórico OHLCV (B3) |
 | `tickers [--type stock\|fund\|bdr] [--search X] [--limit N]` | Lista tickers (B3) |
 | `opcoes PETR4 [--data YYYY-MM-DD] [--tipo call\|put]` | Opções negociadas no pregão (B3) |
-| `curva-ima` | Curva de juros do IMA-B (ANBIMA) |
+| `curva-ima [--indice IMA-B]` | Curva de juros de um índice IMA (ANBIMA) |
+| `debentures [--data] [--search X] [--indexador "IPCA +"]` | Debêntures no mercado secundário (ANBIMA) |
 | `fundos [--search X] [--limit N]` | Classes de fundos em funcionamento (CVM) |
 | `cotas CNPJ [--start] [--end]` | Cota diária de um fundo (CVM) |
 | `dfp EMPRESA --ano 2025 [--demonstracao DRE] [--individual] [--itr]` | DFP/ITR de uma companhia (CVM) |
@@ -286,7 +306,6 @@ Princípios:
 
 ## Roadmap
 
-- **v0.5** — ANBIMA: debêntures, IMA-B 5 e IMA-B 5+
 - **v0.6** — CVM: informes de FII, composição de carteira (CDA)
 - **v1.0** — API estável, docs completas, async nativo
 

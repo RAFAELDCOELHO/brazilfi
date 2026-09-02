@@ -365,3 +365,33 @@ def test_dfp_parses_cvm_code_and_cnpj(mock_cvm) -> None:
     mock_cvm.return_value.itr.assert_called_with(
         "33.000.167/0001-01", 2026, statement="DRE", consolidated=False
     )
+
+
+@patch("brazilfi.cli.ANBIMA")
+def test_curva_ima_indice(mock_anbima) -> None:
+    mock_anbima.return_value.curva_ima.return_value = _fake_curva_ima()
+    result = runner.invoke(app, ["curva-ima", "--indice", "IMA-B 5"])
+    assert result.exit_code == 0
+    mock_anbima.return_value.curva_ima.assert_called_once_with("IMA-B 5")
+
+
+@patch("brazilfi.cli.ANBIMA")
+def test_debentures(mock_anbima) -> None:
+    mock_anbima.return_value.debentures.return_value = pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2026-09-01")] * 2,
+            "code": ["AALM12", "PETR16"],
+            "issuer": ["AURA ALMAS", "PETROBRAS"],
+            "maturity": [pd.Timestamp("2030-10-02"), pd.NaT],
+            "index": ["DI + 1,6%", "IPCA + 5,5%"],
+            "indexer": ["DI +", "IPCA +"],
+            "indicative_rate": [0.7122, float("nan")],
+            "price": [1082.78, 1234.5],
+            "duration": [516.06, 1200.5],
+        }
+    )
+    result = runner.invoke(app, ["debentures", "--indexador", "ipca +"])
+    assert result.exit_code == 0
+    assert "PETR16" in result.stdout
+    assert "AALM12" not in result.stdout
+    assert "01/09/2026" in result.stdout
