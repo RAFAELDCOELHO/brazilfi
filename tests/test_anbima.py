@@ -1,13 +1,18 @@
 """Testes do provider ANBIMA (curva IMA-B) com respx (mock HTTP)."""
 from __future__ import annotations
 
+import math
+from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import httpx
+import pandas as pd
 import pytest
 import respx
 
 from brazilfi.core.exceptions import DataNotFoundError, ProviderError
+from brazilfi.providers import anbima as anbima_module
 from brazilfi.providers.anbima import ANBIMA, IMA_COMPLETO_TXT
 
 # Fatia real do arquivo completo do IMA (registro 1 = TOTAIS, registro 2 =
@@ -155,3 +160,111 @@ def test_curva_ima_http_error_raises_provider_error() -> None:
     respx.get(IMA_COMPLETO_TXT).mock(return_value=httpx.Response(503, text="unavailable"))
     with pytest.raises(ProviderError):
         ANBIMA().curva_ima()
+
+
+# ---------- Outros índices da família IMA ----------
+
+
+@respx.mock
+def test_curva_ima_other_indices() -> None:
+    _mock_ima()
+    an = ANBIMA()
+    ima_b5 = an.curva_ima("ima-b 5")  # case-insensitive
+    assert ima_b5.index == "IMA-B 5"
+    assert len(ima_b5) == 1
+    assert ima_b5.index_number == Decimal("11630.69106200")
+    assert ima_b5.duration_days == 573
+
+    irfm = an.curva_ima("IRF-M")
+    assert [p.bond_type for p in irfm.points] == ["LTN"]
+    assert irfm.points[0].rate == Decimal("13.6522")
+    assert len(an.curva_ima_dataframe("IMA-B 5+")) == 1
+
+
+def test_curva_ima_invalid_index_raises() -> None:
+    with pytest.raises(ValueError, match="index"):
+        ANBIMA().curva_ima("IBOV")
+
+
+# ---------- Debêntures (mercado secundário) ----------
+
+# Fatia real de db260901.txt: cabeçalho institucional, linha vazia, cabeçalho de colunas
+# e papéis com DI+, IPCA+ (com NTN-B de referência), PREFIXADO, "% do DI" e um sem taxa (N/D).
+FAKE_DEBENTURES = """\
+ANBIMA - Associação Brasileira das Entidades dos Mercados Financeiro e de Capitais
+
+Código@Nome@Repac./  Venc.@Índice/ Correção@Taxa de Compra@Taxa de Venda@Taxa Indicativa@Desvio Padrão@Intervalo Indicativo Minimo@Intervalo Indicativo Máximo@PU@% PU Par / % VNE@Duration@% Reune@Referência NTN-B
+AALM12@AURA ALMAS MINERACAO S.A. (*)@02/10/2030@DI + 1,6%@0,8434@0,5768@0,7122@0,0544@0,6578@0,7667@1082,783718@101,8086@516,06@35@
+VLIM25@VLI MULTIMODAL S/A (*)@15/04/2031@PREFIXADO 11,44%@--@--@--@--@--@--@N/D@N/D@N/D@@
+PETR16@PETROBRAS S.A.@15/09/2031@IPCA + 5,5%@6,1@5,9@6,0@0,05@5,9@6,1@1234,5@99,5@1200,5@@15/08/2030
+CDIX11@EMPRESA DI PERCENTUAL S.A.@01/01/2028@114,65% do DI@--@--@0,5@0,01@0,4@0,6@1000,0@100,0@300@@
+"""
+
+DEB_ANY = r"https://www\.anbima\.com\.br/informacoes/merc-sec-debentures/arqs/db\d{6}\.txt"
+
+
+@pytest.fixture(autouse=True)
+def _tmp_anbima_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(anbima_module, "CACHE_DIR", tmp_path)
+
+
+def _mock_deb(body: str = FAKE_DEBENTURES) -> respx.Route:
+    return respx.get(url__regex=DEB_ANY).mock(
+        return_value=httpx.Response(200, content=body.encode("latin-1"))
+    )
+
+
+@respx.mock
+def test_debentures_parses_daily_file() -> None:
+    route = _mock_deb()
+    df = ANBIMA().debentures(on="2026-09-01")
+
+    assert route.calls[0].request.url.path.endswith("/db260901.txt")
+    assert list(df["code"]) == ["AALM12", "CDIX11", "PETR16", "VLIM25"]
+    assert str(df["date"].iloc[0].date()) == "2026-09-01"
+
+    aalm = df.set_index("code").loc["AALM12"]
+    assert aalm["issuer"] == "AURA ALMAS MINERACAO S.A. (*)"
+    assert str(aalm["maturity"].date()) == "2030-10-02"
+    assert (aalm["indexer"], aalm["coupon"]) == ("DI +", pytest.approx(1.6))
+    assert aalm["bid_rate"] == pytest.approx(0.8434)
+    assert aalm["indicative_rate"] == pytest.approx(0.7122)
+    assert aalm["price"] == pytest.approx(1082.783718)
+    assert aalm["duration"] == pytest.approx(516.06)
+    assert pd.isna(aalm["ntnb_reference"])
+
+    petr = df.set_index("code").loc["PETR16"]
+    assert (petr["indexer"], petr["coupon"]) == ("IPCA +", pytest.approx(5.5))
+    assert str(petr["ntnb_reference"].date()) == "2030-08-15"
+
+    cdix = df.set_index("code").loc["CDIX11"]
+    assert (cdix["indexer"], cdix["coupon"]) == ("% DI", pytest.approx(114.65))
+
+    vlim = df.set_index("code").loc["VLIM25"]
+    assert (vlim["indexer"], vlim["coupon"]) == ("PREFIXADO", pytest.approx(11.44))
+    assert math.isnan(vlim["indicative_rate"]) and math.isnan(vlim["price"])
+
+
+@respx.mock
+def test_debentures_walks_back_to_last_published_day() -> None:
+    route = respx.get(url__regex=DEB_ANY).mock(
+        side_effect=[httpx.Response(404), httpx.Response(200, content=FAKE_DEBENTURES.encode("latin-1"))]
+    )
+    df = ANBIMA().debentures()
+    assert route.call_count == 2
+    assert df["date"].iloc[0].date() == date.today() - timedelta(days=1)
+
+
+@respx.mock
+def test_debentures_past_day_is_cached() -> None:
+    route = _mock_deb()
+    ANBIMA().debentures(on=date(2026, 9, 1))
+    ANBIMA().debentures(on="2026-09-01")
+    assert route.call_count == 1
+
+
+@respx.mock
+def test_debentures_empty_file_raises() -> None:
+    _mock_deb("ANBIMA\n\nCódigo@Nome@Repac./  Venc.@Índice/ Correção@a@b@c@d@e@f@g@h@i@j@k\n")
+    with pytest.raises(DataNotFoundError):
+        ANBIMA().debentures(on="2026-09-01")

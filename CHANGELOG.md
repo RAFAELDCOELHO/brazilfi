@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **ANBIMA**: `curva_ima(index=...)` aceita toda a família IMA (IMA-B, IMA-B 5, IMA-B 5+,
+  IRF-M, IRF-M 1, IRF-M 1+, IMA-S, IMA-GERAL, IMA-GERAL-EX-C); `debentures(on=None)` — taxas
+  indicativas do mercado secundário de debêntures (arquivo diário `db{aammdd}.txt`), com
+  indexador e cupom separados, NTN-B de referência e cache permanente por dia útil
+- CLI: `curva-ima --indice`, `debentures`
 - **CVM provider** (dados abertos, sem token): `CVM().fundos()` (cadastro de classes da
   Resolução CVM 175, com administrador/gestor do fundo-mãe), `cotas()` (informe diário:
   cota, PL, captação, resgate, cotistas — aceita o layout antigo `CNPJ_FUNDO` e o novo
@@ -63,7 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `rendimento-*-csv`), que nunca era chamado
 
 ### Planned
-- ANBIMA: IMA-B 5 e IMA-B 5+, debêntures
 - CVM: informes de FII, composição de carteira (CDA)
 - Dividendos e fundamentalistas (BrAPI módulos)
 
