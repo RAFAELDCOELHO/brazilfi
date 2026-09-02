@@ -114,6 +114,22 @@ print(f"Correlação PIB x desemprego: {merged.corr().iloc[0,1]:.3f}")
 
 
 
+### IPCA e desemprego por município ou UF (IBGE)
+
+```python
+from brazilfi import IBGE
+
+ibge = IBGE()
+ibge.ipca(last=12, localidade="N6[3550308]")        # IPCA de São Paulo-SP
+ibge.desemprego(last=4, localidade="N3[35]")        # Desocupação na UF de SP
+ibge.populacao(last=1, localidade="N6[3304557]")    # População do Rio de Janeiro
+```
+
+> **Nota:** os níveis vêm dos metadados do SIDRA. IPCA (agregado 7060) só é
+> apurado em N1, N6 (município) e N7 (região metropolitana) — **não existe IPCA
+> por UF**. PIB trimestral (1620) é servido apenas para o Brasil, por isso
+> `pib()` não aceita `localidade`. Níveis inválidos levantam `ValueError`.
+
 ### Analisar portfólio: variação do dia em múltiplos ativos (B3)
 
 ```python

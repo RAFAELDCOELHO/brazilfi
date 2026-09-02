@@ -57,6 +57,19 @@ AGREGADOS = {
     },
 }
 
+# Níveis territoriais servidos por cada agregado, conforme
+# GET /agregados/<agregado>/metadados → nivelTerritorial.Administrativo
+NIVEIS_TERRITORIAIS: dict[int, tuple[str, ...]] = {
+    # Contas Nacionais Trimestrais: só Brasil
+    1620: ("N1",),
+    # PNAD Contínua: Brasil, grandes regiões, UF, município, RM e RIDE
+    4099: ("N1", "N2", "N3", "N6", "N7", "N14"),
+    # IPCA: Brasil, municípios e regiões metropolitanas da amostra — não há UF
+    7060: ("N1", "N6", "N7"),
+    # Estimativas da população: Brasil, grandes regiões, UF e município
+    6579: ("N1", "N2", "N3", "N6"),
+}
+
 
 class IBGE:
     """
@@ -78,22 +91,44 @@ class IBGE:
     # ---------- Convenience ----------
 
     def pib(self, last: int = 8, volume: bool = False) -> TimeSeries:
-        """PIB trimestral. `volume=True` retorna variação de volume."""
+        """
+        PIB trimestral. `volume=True` retorna variação de volume.
+
+        Sem `localidade`: o SIDRA só serve o agregado 1620 em N1 (Brasil).
+        """
         key = "pib_volume" if volume else "pib_trimestral"
         return self._get_named(key, last=last)
 
-    def desemprego(self, last: int = 4) -> TimeSeries:
-        """Taxa de desocupação (PNAD Contínua, trimestral móvel)."""
-        return self._get_named("desemprego", last=last)
+    def desemprego(self, last: int = 4, localidade: str = "N1[all]") -> TimeSeries:
+        """
+        Taxa de desocupação (PNAD Contínua, trimestral móvel).
 
-    def ipca(self, last: int = 12, indice: bool = False) -> TimeSeries:
-        """IPCA mensal. `indice=True` retorna número-índice em vez da variação."""
+        `localidade` aceita N1, N2, N3 (UF), N6 (município), N7 e N14.
+        Ex: `desemprego(localidade="N3[35]")` → São Paulo (UF).
+        """
+        return self._get_named("desemprego", last=last, localidade=localidade)
+
+    def ipca(
+        self, last: int = 12, indice: bool = False, localidade: str = "N1[all]"
+    ) -> TimeSeries:
+        """
+        IPCA mensal. `indice=True` retorna número-índice em vez da variação.
+
+        `localidade` aceita N1, N6 (município) e N7 (região metropolitana) — o
+        IPCA é apurado por amostra de municípios/RMs, então **não existe nível
+        de UF (N3)**. Ex: `ipca(localidade="N6[3550308]")` → São Paulo-SP.
+        """
         key = "ipca_indice" if indice else "ipca_mensal"
-        return self._get_named(key, last=last)
+        return self._get_named(key, last=last, localidade=localidade)
 
-    def populacao(self, last: int = 5) -> TimeSeries:
-        """População residente estimada (anual)."""
-        return self._get_named("populacao_estimada", last=last)
+    def populacao(self, last: int = 5, localidade: str = "N1[all]") -> TimeSeries:
+        """
+        População residente estimada (anual).
+
+        `localidade` aceita N1, N2, N3 (UF) e N6 (município).
+        Ex: `populacao(localidade="N6[3550308]")` → São Paulo-SP.
+        """
+        return self._get_named("populacao_estimada", last=last, localidade=localidade)
 
     def agregado(
         self,
@@ -116,7 +151,11 @@ class IBGE:
             periodos: alternativa a `last` — formato "202401-202412" ou "202401"
             localidade: padrão N1[all] (Brasil inteiro)
             name/unit: opcional, sobrescreve metadados
+
+        Raises:
+            ValueError: se o agregado não for servido no nível territorial pedido
         """
+        self._check_nivel(agregado, localidade)
         if last is None and periodos is None:
             last = 12
         periodo_str = f"-{last}" if last is not None else periodos
@@ -145,17 +184,33 @@ class IBGE:
 
     # ---------- Internals ----------
 
-    def _get_named(self, key: str, last: int) -> TimeSeries:
+    def _get_named(
+        self, key: str, last: int, localidade: str = "N1[all]"
+    ) -> TimeSeries:
         cfg = AGREGADOS[key]
         classificacao = cfg.get("classificacao")
         return self.agregado(
             agregado=int(cfg["agregado"]),  # type: ignore[call-overload]
             variavel=int(cfg["variavel"]),  # type: ignore[call-overload]
             last=last,
+            localidade=localidade,
             classificacao=str(classificacao) if classificacao else None,
             name=str(cfg["name"]),
             unit=str(cfg["unit"]),
         )
+
+    @staticmethod
+    def _check_nivel(agregado: int, localidade: str) -> None:
+        """Rejeita níveis territoriais que o SIDRA não serve para o agregado."""
+        niveis = NIVEIS_TERRITORIAIS.get(agregado)
+        if niveis is None:  # agregado fora da tabela: deixa o SIDRA decidir
+            return
+        nivel = localidade.split("[")[0].strip().upper()
+        if nivel not in niveis:
+            raise ValueError(
+                f"SIDRA não serve o agregado {agregado} no nível {nivel}. "
+                f"Níveis disponíveis: {', '.join(niveis)}"
+            )
 
     @staticmethod
     def _parse_sidra(variavel_block: dict[str, Any]) -> list[SeriesPoint]:

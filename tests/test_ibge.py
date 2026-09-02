@@ -129,3 +129,130 @@ def test_parse_period() -> None:
     assert IBGE._parse_period("2024.II").month == 4
     assert IBGE._parse_period("2024.III").month == 7
     assert IBGE._parse_period("2024.IV").month == 10
+
+
+FAKE_IPCA_SP = [
+    {
+        "id": "63",
+        "variavel": "IPCA — variação mensal",
+        "unidade": "%",
+        "resultados": [
+            {
+                "classificacoes": [],
+                "series": [
+                    {
+                        "localidade": {"id": "3550308", "nome": "São Paulo - SP"},
+                        "serie": {"202601": "0.61", "202602": "0.28"},
+                    }
+                ],
+            }
+        ],
+    }
+]
+
+
+@respx.mock
+def test_ipca_municipio() -> None:
+    route = respx.get(url__regex=rf"{BASE}/7060/periodos/-2/variaveis/63.*").mock(
+        return_value=httpx.Response(200, json=FAKE_IPCA_SP)
+    )
+    ts = IBGE().ipca(last=2, localidade="N6[3550308]")
+    assert ts.code == "7060.63"
+    assert len(ts) == 2
+    assert route.calls.last.request.url.params["localidades"] == "N6[3550308]"
+
+
+@respx.mock
+def test_desemprego_uf() -> None:
+    route = respx.get(url__regex=rf"{BASE}/4099/periodos/-2/variaveis/4099.*").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "4099",
+                    "variavel": "Taxa de desocupação",
+                    "unidade": "%",
+                    "resultados": [
+                        {
+                            "classificacoes": [],
+                            "series": [
+                                {
+                                    "localidade": {"id": "35", "nome": "São Paulo"},
+                                    "serie": {"202504": "6.8", "202507": "6.5"},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        )
+    )
+    ts = IBGE().desemprego(last=2, localidade="N3[35]")
+    assert len(ts) == 2
+    assert route.calls.last.request.url.params["localidades"] == "N3[35]"
+
+
+@respx.mock
+def test_populacao_municipio() -> None:
+    route = respx.get(url__regex=rf"{BASE}/6579/periodos/-1/variaveis/9324.*").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "9324",
+                    "variavel": "População residente estimada",
+                    "unidade": "Pessoas",
+                    "resultados": [
+                        {
+                            "classificacoes": [],
+                            "series": [
+                                {
+                                    "localidade": {
+                                        "id": "3550308",
+                                        "nome": "São Paulo - SP",
+                                    },
+                                    "serie": {"2024": "11895893"},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        )
+    )
+    ts = IBGE().populacao(last=1, localidade="N6[3550308]")
+    assert len(ts) == 1
+    assert route.calls.last.request.url.params["localidades"] == "N6[3550308]"
+
+
+@respx.mock
+def test_localidade_default_permanece_brasil() -> None:
+    route = respx.get(url__regex=rf"{BASE}/7060/periodos/-3/variaveis/63.*").mock(
+        return_value=httpx.Response(200, json=FAKE_IPCA)
+    )
+    IBGE().ipca(last=3)
+    assert route.calls.last.request.url.params["localidades"] == "N1[all]"
+
+
+def test_ipca_uf_rejeitada() -> None:
+    """IPCA é apurado por município/RM — o SIDRA não serve o agregado 7060 em N3."""
+    with pytest.raises(ValueError, match="N3"):
+        IBGE().ipca(last=3, localidade="N3[35]")
+
+
+def test_pib_so_brasil() -> None:
+    """1620 é servido só em N1: pib() não expõe localidade e agregado() a rejeita."""
+    with pytest.raises(TypeError):
+        IBGE().pib(last=4, localidade="N3[35]")  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="N1"):
+        IBGE().agregado(1620, 583, last=4, localidade="N6[3550308]")
+
+
+def test_agregado_desconhecido_nao_valida_nivel() -> None:
+    """Agregado fora da tabela de metadados passa direto — quem decide é o SIDRA."""
+    with respx.mock:
+        respx.get(url__regex=rf"{BASE}/9999/periodos/-1/variaveis/1.*").mock(
+            return_value=httpx.Response(200, json=[])
+        )
+        with pytest.raises(DataNotFoundError):
+            IBGE().agregado(9999, 1, last=1, localidade="N6[3550308]")
