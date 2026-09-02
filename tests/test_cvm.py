@@ -350,6 +350,7 @@ def test_carteira_merges_blocks_and_weights_by_net_assets() -> None:
     assert lft["quantity"] == 29
     assert set(df["cnpj"]) == {"00017024000153"}
     assert not any(c.startswith("_") for c in df.columns)
+    assert df["issuer"].tolist() == [None, None, None]  # sem emissor: None, não NaN
 
 
 @respx.mock
