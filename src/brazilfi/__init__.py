@@ -7,6 +7,6 @@ from brazilfi.providers.ibge import IBGE
 from brazilfi.providers.ipea import IPEA
 from brazilfi.providers.tesouro import TesouroDireto
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = ["ANBIMA", "B3", "CVM", "IBGE", "IPEA", "Bacen", "TesouroDireto"]

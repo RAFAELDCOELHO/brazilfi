@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Planned
+- Dividendos e fundamentalistas (BrAPI módulos)
+
+## [0.4.0] — 2026-09-02
+
+Cobre o que o roadmap chamava de v0.4 (CVM), v0.5 (ANBIMA) e v0.6 (CDA/FII), mais Focus,
+IPEA e opções/COTAHIST da B3. Tem uma quebra pequena no IBGE (abaixo).
+
 ### Added
 - **CVM**: `carteira(cnpj, month=None)` — composição da carteira (CDA) com os 8 blocos
   unificados, `asset`/`issuer` normalizados e `weight_pct` sobre o PL; `fii(year, cnpj,
@@ -79,9 +87,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tesouro: código morto do endpoint JSON antigo (`_fetch_csv`, `_parse_bond`, URLs
   `rendimento-*-csv`), que nunca era chamado
 
-### Planned
-- Dividendos e fundamentalistas (BrAPI módulos)
-
 ## [0.3.0] — 2026-04-20
 
 ### Added
@@ -117,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - CI: lint (ruff) + type check (mypy) + tests (pytest) on Python 3.11 and 3.12
 - 5 tests, 66% coverage
 
-[Unreleased]: https://github.com/RAFAELDCOELHO/brazilfi/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/RAFAELDCOELHO/brazilfi/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.4.0
 [0.3.0]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.3.0
 [0.2.1]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.2.1
 [0.1.0]: https://github.com/RAFAELDCOELHO/brazilfi/releases/tag/v0.1.0
