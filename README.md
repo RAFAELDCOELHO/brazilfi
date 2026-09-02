@@ -20,8 +20,11 @@ Bacen · IBGE · Tesouro Direto · B3 · ANBIMA · CVM · IPEA — uma única bi
 ## Instalação
 
 ```bash
-pip install brazilfi
+pip install brazilfi                 # Python 3.11+
+pip install "brazilfi[examples]"     # + matplotlib, para os notebooks
 ```
+
+Sem chave de API para nada, exceto cotação ao vivo além de 4 tickers (token gratuito da BrAPI).
 
 ## 60 segundos
 
@@ -79,6 +82,21 @@ brazilfi debentures --indexador "IPCA +"
 brazilfi fundos --search verde
 brazilfi dfp 1023 --ano 2025
 ```
+
+## Referência rápida
+
+| Provider | Métodos | Retorno |
+|---|---|---|
+| `Bacen()` | `selic`, `cdi`, `ipca`, `igpm`, `dolar`, `series(código SGS)`, `focus` | `TimeSeries`; `focus` → `DataFrame` |
+| `IBGE()` | `pib`, `desemprego`, `ipca`, `populacao`, `agregado(id, variavel, ...)` | `TimeSeries` |
+| `IPEA()` | `search`, `serie`, `dataframe`, `metadata` | `DataFrame` / `TimeSeries` / `dict` |
+| `TesouroDireto()` | `available`, `available_dataframe`, `history`, `clear_cache` | `list[Bond]` / `DataFrame` |
+| `B3()` | `quote`, `price`, `history`, `list_tickers`, `options`, `cotahist` | `list[Quote]` / `Decimal` / `DataFrame` |
+| `ANBIMA()` | `curva_ima`, `curva_ima_dataframe`, `debentures` | `YieldCurve` / `DataFrame` |
+| `CVM()` | `fundos`, `cotas`, `carteira`, `fii`, `companhias`, `dfp`, `itr` | `DataFrame` |
+
+Todo `TimeSeries` e `YieldCurve` tem `.to_dataframe()`; os modelos são Pydantic v2 (frozen).
+Datas aceitam `"YYYY-MM-DD"` ou `datetime.date`; CNPJs aceitam com ou sem pontuação.
 
 ---
 
@@ -148,7 +166,9 @@ from brazilfi import Bacen
 bc = Bacen()
 focus = bc.focus("IPCA", start="2025-01-01")             # coleta semanal, por ano de referência
 esperado_2025 = focus[focus["reference"] == "2025"].set_index("date")["median"]
-realizado_2025 = float(bc.ipca(start="2025-01-01", end="2025-12-31").to_dataframe().add(1).prod().iloc[0] - 1) * 100
+
+ipca_mensal = bc.ipca(start="2025-01-01", end="2025-12-31").to_dataframe()["value"]  # em %
+realizado_2025 = ((ipca_mensal / 100 + 1).prod() - 1) * 100
 print(f"Focus (última mediana): {esperado_2025.iloc[-1]:.2f}%  |  IPCA 2025: {realizado_2025:.2f}%")
 
 # Por reunião do Copom
@@ -178,8 +198,6 @@ desemprego = ibge.desemprego(last=20).to_dataframe().rename(columns={"value": "d
 merged = pib.join(desemprego, how="inner")
 print(f"Correlação PIB x desemprego: {merged.corr().iloc[0,1]:.3f}")
 ```
-
-
 
 ### IPCA e desemprego por município ou UF (IBGE)
 
@@ -323,7 +341,10 @@ print(itr[itr["account"] == "3.01"][["period_start", "period_end", "value"]])
 | ✅ **B3** (BrAPI.dev + COTAHIST) | Cotações, histórico OHLCV (com e sem token), listagem, opções | `brapi.dev`, `bvmf.bmfbovespa.com.br` |
 | ✅ **ANBIMA** | Curvas de toda a família IMA (IMA-B, IMA-B 5/5+, IRF-M, IMA-S, IMA-GERAL), debêntures no secundário | `anbima.com.br` |
 | ✅ **CVM** (dados abertos) | Cadastro de fundos e cias abertas, cota diária, carteiras (CDA), informes de FII, DFP, ITR | `dados.cvm.gov.br` |
-| 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e IMA-B 5+ | — |
+
+Tudo vem de fontes oficiais ou públicas; os formatos originais (fixed-width do COTAHIST, `@`
+da ANBIMA, ZIPs latin-1 da CVM, OData do Olinda e do Ipeadata) ficam escondidos atrás de
+DataFrames e modelos com nomes em inglês.
 
 ---
 
@@ -387,7 +408,8 @@ Princípios:
 
 ## Roadmap
 
-- **v1.0** — API estável, docs completas, async nativo
+- **v0.5** — dividendos e fundamentalistas (BrAPI), IMA-B histórico, posições confidenciais do CDA
+- **v1.0** — API estável, docs completas, async nativo em todos os providers
 
 ---
 
