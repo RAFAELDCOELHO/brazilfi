@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - New Pydantic models: `YieldCurve`, `CurvePoint`
 - `HttpClient.get_text()` para fontes que servem CSV/TXT em latin-1
 - CLI command: `curva-ima`
+- **IBGE**: parâmetro `localidade` em `ipca()`, `desemprego()` e `populacao()` —
+  UF (`N3[35]`), município (`N6[3550308]`), região metropolitana etc. Default
+  continua `N1[all]` (Brasil). `pib()` segue sem o parâmetro porque o SIDRA só
+  serve o agregado 1620 em N1, e o IPCA não aceita N3 (apuração por município/RM)
+- `IBGE.agregado()` valida o nível territorial contra os metadados do SIDRA e
+  levanta `ValueError` em vez de deixar a API devolver série vazia
 
 ### Planned
 - CVM provider (fundos, DFPs)
