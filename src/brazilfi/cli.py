@@ -8,6 +8,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from brazilfi.core.exceptions import BrazilFiError
 from brazilfi.core.models import TimeSeries
 from brazilfi.providers.anbima import ANBIMA
 from brazilfi.providers.b3 import B3
@@ -21,6 +22,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+LOCALIDADE_HELP = "Nível territorial SIDRA. Ex: N3[35] (UF SP), N6[3550308] (município SP)"
 
 
 def _render_series(ts: TimeSeries, title: str) -> None:
@@ -70,9 +73,12 @@ def pib(
 
 
 @app.command()
-def desemprego(last: int = typer.Option(4)) -> None:
+def desemprego(
+    last: int = typer.Option(4),
+    localidade: str = typer.Option("N1[all]", help=LOCALIDADE_HELP),
+) -> None:
     """Taxa de desocupação — PNAD Contínua."""
-    _render_series(IBGE().desemprego(last=last), "Desemprego")
+    _render_series(IBGE().desemprego(last=last, localidade=localidade), "Desemprego")
 
 
 @app.command()
@@ -80,18 +86,22 @@ def ipca(
     last: int = typer.Option(12),
     source: str = typer.Option("bacen", help="bacen | ibge"),
     acum: bool = typer.Option(False, help="Acumulado 12m (Bacen)"),
+    localidade: str = typer.Option("N1[all]", help=f"{LOCALIDADE_HELP} (só IBGE)"),
 ) -> None:
     """IPCA — escolhe fonte (Bacen ou IBGE)."""
     if source == "ibge":
-        _render_series(IBGE().ipca(last=last), "IPCA (IBGE)")
+        _render_series(IBGE().ipca(last=last, localidade=localidade), "IPCA (IBGE)")
     else:
         _render_series(Bacen().ipca(last=last, acum_12m=acum), "IPCA (Bacen)")
 
 
 @app.command()
-def populacao(last: int = typer.Option(5)) -> None:
+def populacao(
+    last: int = typer.Option(5),
+    localidade: str = typer.Option("N1[all]", help=LOCALIDADE_HELP),
+) -> None:
     """População estimada (IBGE)."""
-    _render_series(IBGE().populacao(last=last), "População")
+    _render_series(IBGE().populacao(last=last, localidade=localidade), "População")
 
 
 # ---------- Tesouro Direto ----------
@@ -215,6 +225,14 @@ def tickers(
     console.print(table)
 
 
+def main() -> None:
+    """Entry point do console script: erros da lib viram mensagem curta, não traceback."""
+    try:
+        app()
+    except (BrazilFiError, ValueError) as e:  # ValueError = argumento inválido (ex: localidade)
+        console.print(f"[red]Erro:[/red] {e}")
+        raise SystemExit(1) from e
+
 
 if __name__ == "__main__":
-    app()
+    main()
