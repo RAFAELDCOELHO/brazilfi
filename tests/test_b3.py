@@ -238,3 +238,33 @@ def test_options_past_session_is_cached_forever() -> None:
     B3().options("PETR4", on="2026-09-01")
     B3().options("PETR3", on="2026-09-01")
     assert route.call_count == 1
+
+
+# ---------- COTAHIST anual (OHLCV sem token) ----------
+
+
+@respx.mock
+def test_cotahist_yearly_ohlcv() -> None:
+    body = FAKE_COTAHIST + FAKE_COTAHIST.replace("20260901", "20260902").replace("1@PETR4", "1@PETR4")
+    route = respx.get(url__regex=r".*/COTAHIST_A2026\.ZIP").mock(
+        return_value=httpx.Response(200, content=_cotahist_zip(body, "COTAHIST_A2026.TXT"))
+    )
+    df = B3().cotahist("petr4", year=2026)
+
+    assert route.called
+    assert [str(d.date()) for d in df.index] == ["2026-09-01", "2026-09-02"]
+    day = df.iloc[0]
+    assert (day["open"], day["high"], day["low"], day["close"]) == (45.50, 46.94, 45.50, 46.87)
+    assert day["avg"] == pytest.approx(46.43)
+    assert day["trades"] == 75161
+    assert day["quantity"] == 49726600
+    assert day["volume"] == pytest.approx(2308814831.0)
+
+
+@respx.mock
+def test_cotahist_unknown_ticker_raises() -> None:
+    respx.get(url__regex=r".*/COTAHIST_A2025\.ZIP").mock(
+        return_value=httpx.Response(200, content=_cotahist_zip(name="COTAHIST_A2025.TXT"))
+    )
+    with pytest.raises(DataNotFoundError, match="ITUB4"):
+        B3().cotahist("ITUB4", year=2025)

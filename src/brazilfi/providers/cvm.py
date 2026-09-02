@@ -1,9 +1,10 @@
-"""Provider CVM — dados abertos (dados.cvm.gov.br): fundos, cotas diárias, DFP/ITR."""
+"""Provider CVM — dados abertos: fundos, cotas, carteiras (CDA), FII, DFP/ITR."""
 from __future__ import annotations
 
 import re
 import zipfile
 from datetime import date
+from functools import reduce
 from typing import Any
 
 import pandas as pd
@@ -20,6 +21,14 @@ INF_DIARIO_URL = f"{CVM_BASE}/FI/DOC/INF_DIARIO/DADOS/inf_diario_fi_{{yyyymm}}.z
 CAD_CIA_URL = f"{CVM_BASE}/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv"
 # DFP (anual) e ITR (trimestral) têm o mesmo layout, só muda o prefixo.
 DOC_URL = f"{CVM_BASE}/CIA_ABERTA/DOC/{{doc}}/DADOS/{{doc_lower}}_cia_aberta_{{year}}.zip"
+
+# Informe mensal de FII (um ZIP por ano com geral/complemento/ativo_passivo) e
+# composição de carteira dos fundos (CDA: um ZIP por mês, 8 blocos por tipo de ativo).
+FII_URL = f"{CVM_BASE}/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_{{year}}.zip"
+CDA_URL = f"{CVM_BASE}/FI/DOC/CDA/DADOS/cda_fi_{{yyyymm}}.zip"
+FII_SECTIONS = {"geral", "complemento", "ativo_passivo"}
+CDA_BLOCKS = range(1, 9)
+CDA_LOOKBACK_MONTHS = 4  # o CDA sai com 1-2 meses de atraso
 
 CACHE_DIR = CACHE_ROOT / "cvm"
 ENCODING = "latin-1"  # a CVM serve tudo em ISO-8859-1, sem declarar charset
@@ -61,6 +70,42 @@ QUOTA_COLS = {
     "RESG_DIA": "outflow",
     "NR_COTST": "shareholders",
 }
+# Colunas comuns aos 8 blocos do CDA + as específicas que identificam o ativo.
+CDA_COLS = {
+    "CNPJ_FUNDO_CLASSE": "cnpj",
+    "DENOM_SOCIAL": "fund",
+    "DT_COMPTC": "date",
+    "TP_APLIC": "application",
+    "TP_ATIVO": "asset_type",
+    "EMISSOR_LIGADO": "related_issuer",
+    "TP_NEGOC": "trading",
+    "QT_POS_FINAL": "quantity",
+    "VL_MERC_POS_FINAL": "market_value",
+    "VL_CUSTO_POS_FINAL": "cost_value",
+    "DT_CONFID_APLIC": "confidential_until",
+    "CD_ISIN": "isin",
+    "DT_VENC": "maturity",
+    "AG_RISCO": "rating_agency",
+    "GRAU_RISCO": "rating",
+    # candidatos a `asset` (na ordem de preferência) e a `issuer`
+    "CD_ATIVO": "_cd_ativo",
+    "TP_TITPUB": "_tp_titpub",
+    "NM_FUNDO_CLASSE_SUBCLASSE_COTA": "_nm_fundo_cota",
+    "DS_ATIVO": "_ds_ativo",
+    "DS_SWAP": "_ds_swap",
+    "DS_ATIVO_EXTERIOR": "_ds_ativo_exterior",
+    "CD_ATIVO_BV_MERC": "_cd_ativo_bv",
+    "EMISSOR": "_emissor",
+    "CNPJ_FUNDO_CLASSE_COTA": "_cnpj_fundo_cota",
+    "CPF_CNPJ_EMISSOR": "_cnpj_emissor",
+    "CNPJ_EMISSOR": "_cnpj_emissor2",
+}
+CDA_ASSET_CANDIDATES = [
+    "_cd_ativo", "_tp_titpub", "_nm_fundo_cota", "_ds_ativo", "_ds_swap",
+    "_ds_ativo_exterior", "_cd_ativo_bv", "_emissor",
+]
+CDA_ISSUER_CANDIDATES = ["_emissor", "_cnpj_fundo_cota", "_cnpj_emissor", "_cnpj_emissor2"]
+
 COMPANY_COLS = {
     "CNPJ_CIA": "cnpj",
     "DENOM_SOCIAL": "name",
@@ -85,6 +130,8 @@ class CVM:
         >>> cvm = CVM()
         >>> cvm.fundos(search="verde")                       # cadastro de fundos
         >>> cvm.cotas("00.017.024/0001-53")                  # cota diária, últimos 3 meses
+        >>> cvm.carteira("00.017.024/0001-53")               # composição da carteira (CDA)
+        >>> cvm.fii(2026, cnpj="00.332.266/0001-31")         # informe mensal de FII
         >>> cvm.companhias(search="petrobras")               # cadastro de cias abertas
         >>> cvm.dfp(1023, 2025, statement="DRE")             # DRE consolidada do BB
         >>> cvm.itr("33.000.167/0001-01", 2026, "BPA")       # balanço trimestral
@@ -176,6 +223,151 @@ class CVM:
             df[col] = pd.to_numeric(df[col], errors="coerce")
         return df.set_index("date").sort_index()
 
+    def carteira(self, cnpj: str, month: str | date | None = None) -> pd.DataFrame:
+        """
+        Composição da carteira de um fundo (CDA), uma linha por ativo.
+
+        Junta os 8 blocos do CDA (títulos públicos, cotas de fundos, swaps, ações e
+        derivativos, renda fixa privada, depósitos, exterior, demais) numa tabela só,
+        com `asset`/`issuer` normalizados e `weight_pct` sobre o PL do mês. Posições
+        confidenciais só aparecem depois de `confidential_until`.
+
+        Args:
+            cnpj: CNPJ da classe do fundo.
+            month: mês de referência ("2026-07", date ou "YYYYMM"). Sem `month`, o
+                mais recente publicado (o CDA sai com 1-2 meses de atraso).
+
+        Cada ZIP mensal tem ~16 MB (180 MB abertos) e fica em cache local.
+        """
+        if month is not None:
+            return self._carteira_on(cnpj, pd.Period(month, freq="M"))
+        period = pd.Timestamp(date.today()).to_period("M")
+        # Recua também quando o mês existe mas o fundo ainda não entregou o CDA
+        # (o ZIP do mês corrente começa com poucos fundos e cresce ao longo do mês).
+        for _ in range(CDA_LOOKBACK_MONTHS):
+            try:
+                return self._carteira_on(cnpj, period)
+            except DataNotFoundError:
+                period -= 1
+        raise DataNotFoundError(
+            f"Nenhum CDA com {cnpj} nos últimos {CDA_LOOKBACK_MONTHS} meses"
+        )
+
+    def _carteira_on(self, cnpj: str, period: pd.Period) -> pd.DataFrame:
+        yyyymm = period.strftime("%Y%m")
+        recent = pd.Timestamp(date.today()).to_period("M") - 3
+        digits = _digits(cnpj)
+        frames: list[pd.DataFrame] = []
+        for block in CDA_BLOCKS:
+            try:
+                df = self._csv(
+                    CDA_URL.format(yyyymm=yyyymm),
+                    f"cda_fi_{yyyymm}.zip",
+                    CDA_COLS,
+                    member=f"cda_fi_BLC_{block}_{yyyymm}.csv",
+                    max_age_days=1 if period >= recent else None,
+                )
+            except DataNotFoundError:
+                continue  # bloco sem nenhum ativo no mês (ZIP parcial) não vem no arquivo
+            df = df[df["cnpj"].map(_digits) == digits].copy()
+            if df.empty:
+                continue
+            df["block"] = block
+            frames.append(df)
+        if not frames:
+            raise DataNotFoundError(f"CDA {yyyymm}: nenhuma posição para {cnpj}")
+
+        df = pd.concat(frames, ignore_index=True)
+        df["asset"] = self._coalesce(df, CDA_ASSET_CANDIDATES)
+        df["issuer"] = self._coalesce(df, CDA_ISSUER_CANDIDATES)
+        df = df.drop(columns=[c for c in df.columns if c.startswith("_")])
+        df["cnpj"] = df["cnpj"].map(_digits)
+        for col in ("date", "maturity", "confidential_until"):
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+        for col in ("quantity", "market_value", "cost_value"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        net_assets = float("nan")
+        try:
+            pl = self._csv(
+                CDA_URL.format(yyyymm=yyyymm),
+                f"cda_fi_{yyyymm}.zip",
+                {"CNPJ_FUNDO_CLASSE": "cnpj", "VL_PATRIM_LIQ": "net_assets"},
+                member=f"cda_fi_PL_{yyyymm}.csv",
+                max_age_days=1 if period >= recent else None,
+            )
+            pl = pl[pl["cnpj"].map(_digits) == digits]
+            if len(pl):
+                net_assets = float(pl["net_assets"].iloc[0])
+        except DataNotFoundError:
+            pass
+        df["weight_pct"] = df["market_value"] / net_assets * 100
+
+        front = ["cnpj", "fund", "date", "block", "application", "asset_type", "asset", "issuer"]
+        rest = [c for c in df.columns if c not in front]
+        return (
+            df[front + rest]
+            .sort_values("market_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @staticmethod
+    def _coalesce(df: pd.DataFrame, candidates: list[str]) -> pd.Series:
+        """Primeiro valor não-vazio entre as colunas candidatas presentes."""
+        present = [df[c] for c in candidates if c in df.columns]
+        if not present:
+            return pd.Series([None] * len(df), index=df.index, dtype=object)
+        return reduce(lambda a, b: a.where(a.notna() & (a != ""), b), present)
+
+    # ---------- FII ----------
+
+    def fii(
+        self,
+        year: int,
+        cnpj: str | None = None,
+        section: str = "complemento",
+    ) -> pd.DataFrame:
+        """
+        Informe mensal de FII (um ZIP por ano).
+
+        Args:
+            year: ano de referência.
+            cnpj: filtra um fundo; sem `cnpj`, todos os FIIs do ano.
+            section: "complemento" (PL, cota patrimonial, cotistas, rentabilidade,
+                dividend yield — default), "ativo_passivo" (composição do balanço)
+                ou "geral" (cadastro, mandato, segmento, administrador).
+
+        Só a última versão de cada informe é mantida. Colunas ficam com o nome da
+        CVM em minúsculas (`patrimonio_liquido`, `percentual_dividend_yield_mes`...).
+        """
+        if section not in FII_SECTIONS:
+            raise ValueError(f"section inválida. Use uma de: {sorted(FII_SECTIONS)}")
+        df = self._csv(
+            FII_URL.format(year=year),
+            f"inf_mensal_fii_{year}.zip",
+            member=f"inf_mensal_fii_{section}_{year}.csv",
+            max_age_days=1 if year >= date.today().year - 1 else None,
+        )
+        df = df.rename(
+            columns={"CNPJ_Fundo_Classe": "cnpj", "Data_Referencia": "date", "Versao": "version"}
+        ).rename(columns=str.lower)
+        df["cnpj"] = df["cnpj"].map(_digits)
+        if cnpj:
+            df = df[df["cnpj"] == _digits(cnpj)]
+        if df.empty:
+            raise DataNotFoundError(f"Informe de FII {year}: nada para cnpj={cnpj!r}")
+        df["version"] = df["version"].astype(int)
+        df = df[df["version"] == df.groupby(["cnpj", "date"])["version"].transform("max")]
+        df["date"] = pd.to_datetime(df["date"])
+        if section != "geral":
+            for col in df.columns:
+                if col.startswith("data_"):
+                    df[col] = pd.to_datetime(df[col], errors="coerce")
+                elif col not in ("cnpj", "date", "version"):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+        return df.sort_values(["cnpj", "date"]).reset_index(drop=True)
+
     # ---------- Companhias abertas ----------
 
     def companhias(self, search: str | None = None, active: bool = True) -> pd.DataFrame:
@@ -258,8 +450,11 @@ class CVM:
         if member is None:
             df = pd.read_csv(path, **kwargs)
         else:
-            with zipfile.ZipFile(path) as zf, zf.open(member) as fh:
-                df = pd.read_csv(fh, **kwargs)
+            with zipfile.ZipFile(path) as zf:
+                if member not in zf.namelist():
+                    raise DataNotFoundError(f"{filename} não contém {member}")
+                with zf.open(member) as fh:
+                    df = pd.read_csv(fh, **kwargs)
         if columns:
             df = df.rename(columns=columns)
         return df

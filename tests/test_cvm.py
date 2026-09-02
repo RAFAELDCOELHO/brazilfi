@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 
 import httpx
+import pandas as pd
 import pytest
 import respx
 
@@ -242,3 +243,126 @@ def test_itr_hits_itr_endpoint_and_member() -> None:
     df = CVM().itr(9512, 2026, consolidated=False)
     assert route.called
     assert df.iloc[0]["value"] == pytest.approx(500_000_000_000.0)
+
+
+# ---------- fii ----------
+
+FII_COMPLEMENTO = """\
+CNPJ_Fundo_Classe;Data_Referencia;Versao;Data_Informacao_Numero_Cotistas;Total_Numero_Cotistas;Patrimonio_Liquido;Valor_Patrimonial_Cotas;Percentual_Rentabilidade_Efetiva_Mes;Percentual_Dividend_Yield_Mes
+00.332.266/0001-31;2026-01-01;1;2026-01-30;3600;1.00;1.00;0.001;0.001
+00.332.266/0001-31;2026-01-01;2;2026-01-30;3639;259735756.51;92.2101419138767;0.005242;0.004342
+00.332.266/0001-31;2026-02-01;1;2026-02-27;3620;258000000.00;92.10;0.0050;0.0043
+11.111.111/0001-11;2026-01-01;1;2026-01-30;10;1000.00;10.00;0.0;0.0
+"""
+FII_GERAL = """\
+Tipo_Fundo_Classe;CNPJ_Fundo_Classe;Data_Referencia;Versao;Nome_Fundo_Classe;Segmento_Atuacao;Mandato
+Classe;00.332.266/0001-31;2026-01-01;2;VIA PARQUE SHOPPING FII RESP LTDA;Shoppings;
+"""
+
+
+def _mock_fii(year: int = 2026) -> respx.Route:
+    return respx.get(f"{CVM_BASE}/FII/DOC/INF_MENSAL/DADOS/inf_mensal_fii_{year}.zip").mock(
+        return_value=httpx.Response(
+            200,
+            content=_zip(
+                **{
+                    f"inf_mensal_fii_complemento_{year}__csv": FII_COMPLEMENTO,
+                    f"inf_mensal_fii_geral_{year}__csv": FII_GERAL,
+                }
+            ),
+        )
+    )
+
+
+@respx.mock
+def test_fii_keeps_latest_version_and_converts_numbers() -> None:
+    route = _mock_fii()
+    df = CVM().fii(2026, cnpj="00.332.266/0001-31")
+    assert route.called
+    assert len(df) == 2
+    jan = df.iloc[0]
+    assert str(jan["date"].date()) == "2026-01-01"
+    assert jan["version"] == 2
+    assert jan["patrimonio_liquido"] == pytest.approx(259_735_756.51)
+    assert jan["total_numero_cotistas"] == 3639
+    assert str(jan["data_informacao_numero_cotistas"].date()) == "2026-01-30"
+    assert set(df["cnpj"]) == {"00332266000131"}
+
+    assert len(CVM().fii(2026)) == 3  # todos os fundos
+    geral = CVM().fii(2026, section="geral")
+    assert geral.iloc[0]["segmento_atuacao"] == "Shoppings"
+    with pytest.raises(ValueError, match="section"):
+        CVM().fii(2026, section="xyz")
+    with pytest.raises(DataNotFoundError):
+        CVM().fii(2026, cnpj="99.999.999/0001-99")
+
+
+# ---------- carteira (CDA) ----------
+
+CDA_BLC_1 = """\
+TP_FUNDO_CLASSE;CNPJ_FUNDO_CLASSE;DENOM_SOCIAL;DT_COMPTC;TP_APLIC;TP_ATIVO;EMISSOR_LIGADO;TP_NEGOC;QT_POS_FINAL;VL_MERC_POS_FINAL;VL_CUSTO_POS_FINAL;DT_CONFID_APLIC;TP_TITPUB;CD_ISIN;CD_SELIC;DT_EMISSAO;DT_VENC
+CLASSES - FIF;00.017.024/0001-53;FIF RENDA FIXA;2026-07-31;Títulos Públicos;Título público federal;;Para negociação;29.000000;567153.87;;;LETRAS FINANCEIRAS DO TESOURO;BRSTNCLF1RH3;210100;2021-07-02;2027-09-01
+CLASSES - FIF;99.999.999/0001-99;OUTRO FUNDO;2026-07-31;Títulos Públicos;Título público federal;;Para negociação;1.000000;1.00;;;LETRAS FINANCEIRAS DO TESOURO;BRSTNCLF1RH3;210100;2021-07-02;2027-09-01
+"""
+CDA_BLC_4 = """\
+TP_FUNDO_CLASSE;CNPJ_FUNDO_CLASSE;DENOM_SOCIAL;DT_COMPTC;TP_APLIC;TP_ATIVO;EMISSOR_LIGADO;TP_NEGOC;QT_POS_FINAL;VL_MERC_POS_FINAL;VL_CUSTO_POS_FINAL;DT_CONFID_APLIC;CD_ATIVO;DS_ATIVO;CD_ISIN;DT_INI_VIGENCIA;DT_FIM_VIGENCIA
+CLASSES - FIF;00.017.024/0001-53;FIF RENDA FIXA;2026-07-31;Ações;Ação ordinária;N;Para negociação;100.000000;300000.00;;;ITUB3;ITAUUNIBANCO ON      N1;BRITUBACNOR4;2009-05-20;
+"""
+CDA_BLC_8 = """\
+TP_FUNDO_CLASSE;CNPJ_FUNDO_CLASSE;DENOM_SOCIAL;DT_COMPTC;TP_APLIC;TP_ATIVO;EMISSOR_LIGADO;TP_NEGOC;QT_POS_FINAL;VL_MERC_POS_FINAL;VL_CUSTO_POS_FINAL;DT_CONFID_APLIC;DS_ATIVO;PF_PJ_EMISSOR;CPF_CNPJ_EMISSOR;EMISSOR
+CLASSES - FIF;00.017.024/0001-53;FIF RENDA FIXA;2026-07-31;Disponibilidades;Outros;;;0.000000;132846.13;;;Disponibilidade;;;
+"""
+CDA_PL = """\
+TP_FUNDO_CLASSE;CNPJ_FUNDO_CLASSE;DENOM_SOCIAL;DT_COMPTC;VL_PATRIM_LIQ
+CLASSES - FIF;00.017.024/0001-53;FIF RENDA FIXA;2026-07-31;1000000.00
+"""
+
+
+def _mock_cda(yyyymm: str, members: dict[str, str] | None) -> respx.Route:
+    url = f"{CVM_BASE}/FI/DOC/CDA/DADOS/cda_fi_{yyyymm}.zip"
+    if members is None:
+        return respx.get(url).mock(return_value=httpx.Response(404))
+    return respx.get(url).mock(return_value=httpx.Response(200, content=_zip(**members)))
+
+
+def _cda_members(yyyymm: str) -> dict[str, str]:
+    # Só 3 dos 8 blocos + PL, como num ZIP parcial: os blocos ausentes são pulados.
+    return {
+        f"cda_fi_BLC_1_{yyyymm}__csv": CDA_BLC_1,
+        f"cda_fi_BLC_4_{yyyymm}__csv": CDA_BLC_4,
+        f"cda_fi_BLC_8_{yyyymm}__csv": CDA_BLC_8,
+        f"cda_fi_PL_{yyyymm}__csv": CDA_PL,
+    }
+
+
+@respx.mock
+def test_carteira_merges_blocks_and_weights_by_net_assets() -> None:
+    route = _mock_cda("202607", _cda_members("202607"))
+    df = CVM().carteira("00.017.024/0001-53", month="2026-07")
+
+    assert route.call_count == 1  # um download, vários membros
+    assert list(df["asset"]) == ["LETRAS FINANCEIRAS DO TESOURO", "ITUB3", "Disponibilidade"]
+    assert list(df["block"]) == [1, 4, 8]
+    assert df["weight_pct"].tolist() == pytest.approx([56.715387, 30.0, 13.284613])
+    lft = df.iloc[0]
+    assert lft["isin"] == "BRSTNCLF1RH3"
+    assert str(lft["maturity"].date()) == "2027-09-01"
+    assert lft["quantity"] == 29
+    assert set(df["cnpj"]) == {"00017024000153"}
+    assert not any(c.startswith("_") for c in df.columns)
+
+
+@respx.mock
+def test_carteira_walks_back_when_fund_not_yet_filed() -> None:
+    today = pd.Timestamp.today().to_period("M")
+    _mock_cda(today.strftime("%Y%m"), None)  # mês corrente ainda sem ZIP
+    prev = (today - 1).strftime("%Y%m")
+    _mock_cda(prev, {f"cda_fi_BLC_1_{prev}__csv": CDA_BLC_1.replace("00.017.024", "00.000.000")})
+    prev2 = (today - 2).strftime("%Y%m")
+    _mock_cda(prev2, _cda_members(prev2))
+
+    df = CVM().carteira("00017024000153")
+    assert len(df) == 3
+
+    with pytest.raises(DataNotFoundError):
+        CVM().carteira("55.555.555/0001-55", month="2026-07")
