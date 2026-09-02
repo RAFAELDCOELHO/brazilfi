@@ -363,7 +363,81 @@ def opcoes(
     console.print(f"[dim]Total: {len(df)} séries negociadas. Primeiras 60 exibidas.[/dim]")
 
 
+@app.command()
+def cotahist(
+    ticker: str = typer.Argument(..., help="Ticker à vista. Ex: PETR4"),
+    ano: int = typer.Option(0, "--ano", help="Ano (default: corrente)"),
+) -> None:
+    """OHLCV diário pelo COTAHIST anual (B3, sem token)."""
+    df = B3().cotahist(ticker.upper(), year=ano or None)
+    table = Table(title=f"B3 — {ticker.upper()} COTAHIST {ano or ''}".rstrip(), show_lines=False)
+    for col, style in [("Data", "cyan"), ("Open", ""), ("High", "green"), ("Low", "red"),
+                       ("Close", "yellow"), ("Negócios", "blue"), ("Volume", "blue")]:
+        table.add_column(col, style=style or None, justify="left" if col == "Data" else "right")
+    for d, row in df.tail(30).iterrows():
+        dt = cast("pd.Timestamp", d)
+        table.add_row(
+            dt.strftime("%d/%m/%Y"), f"{row['open']:.2f}", f"{row['high']:.2f}",
+            f"{row['low']:.2f}", f"{row['close']:.2f}", f"{int(row['trades']):,}",
+            f"{row['volume']:,.0f}",
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} pregões. Últimos 30 exibidos.[/dim]")
+
+
 # ---------- CVM ----------
+
+
+@app.command()
+def carteira(
+    cnpj: str = typer.Argument(..., help="CNPJ da classe do fundo"),
+    mes: str = typer.Option("", "--mes", help="Mês YYYY-MM (default: último CDA publicado)"),
+    top: int = typer.Option(30, "--top", help="Maiores posições"),
+) -> None:
+    """Composição da carteira de um fundo (CVM, CDA)."""
+    df = CVM().carteira(cnpj, month=mes or None)
+    day = pd.Timestamp(df["date"].iloc[0])
+    table = Table(title=f"CVM — Carteira {cnpj} ({day:%m/%Y})", show_lines=False)
+    table.add_column("Ativo", style="cyan")
+    table.add_column("Tipo", style="yellow")
+    table.add_column("Emissor", style="white")
+    table.add_column("Valor (R$)", justify="right", style="green")
+    table.add_column("% PL", justify="right", style="blue")
+    for _, row in df.head(top).iterrows():
+        table.add_row(
+            str(row["asset"] or "—")[:40], str(row["asset_type"])[:30],
+            str(row["issuer"] or "—")[:30], f"{row['market_value']:,.0f}",
+            f"{row['weight_pct']:.2f}" if pd.notna(row["weight_pct"]) else "—",
+        )
+    console.print(table)
+    console.print(f"[dim]Total: {len(df)} posições. Maiores {top} exibidas.[/dim]")
+
+
+@app.command()
+def fii(
+    cnpj: str = typer.Argument(..., help="CNPJ do FII"),
+    ano: int = typer.Option(..., "--ano", help="Ano de referência"),
+) -> None:
+    """Informe mensal de um FII (CVM): PL, cota, cotistas, rentabilidade, DY."""
+    df = CVM().fii(ano, cnpj=cnpj)
+    table = Table(title=f"CVM — FII {cnpj} ({ano})", show_lines=False)
+    table.add_column("Mês", style="cyan")
+    table.add_column("PL", justify="right", style="green")
+    table.add_column("Cota patrim.", justify="right")
+    table.add_column("Cotistas", justify="right")
+    table.add_column("Rentab. mês %", justify="right", style="yellow")
+    table.add_column("DY mês %", justify="right", style="blue")
+    for _, row in df.iterrows():
+        d = cast("pd.Timestamp", row["date"])
+        table.add_row(
+            d.strftime("%m/%Y"),
+            f"{row['patrimonio_liquido']:,.0f}",
+            f"{row['valor_patrimonial_cotas']:.2f}",
+            f"{int(row['total_numero_cotistas']):,}" if pd.notna(row["total_numero_cotistas"]) else "—",  # noqa: E501
+            f"{row['percentual_rentabilidade_efetiva_mes'] * 100:.2f}",
+            f"{row['percentual_dividend_yield_mes'] * 100:.2f}",
+        )
+    console.print(table)
 
 
 @app.command()

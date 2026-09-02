@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **CVM**: `carteira(cnpj, month=None)` — composição da carteira (CDA) com os 8 blocos
+  unificados, `asset`/`issuer` normalizados e `weight_pct` sobre o PL; `fii(year, cnpj,
+  section)` — informe mensal de FII (complemento, ativo_passivo, geral)
+- **B3**: `cotahist(ticker, year=None)` — OHLCV diário pelo COTAHIST anual, sem BrAPI nem
+  token (streaming do ZIP de ~70 MB, cache local)
+- CLI: `cotahist`, `carteira`, `fii`
 - **Bacen**: `focus(indicador, freq=...)` — expectativas de mercado do boletim Focus via
   Olinda/OData (anual, mensal, trimestral, por reunião do Copom, inflação 12m, Top 5)
 - **IPEA provider** (Ipeadata OData): `search()` no catálogo (~3.600 séries, filtrado
@@ -74,7 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `rendimento-*-csv`), que nunca era chamado
 
 ### Planned
-- CVM: informes de FII, composição de carteira (CDA)
 - Dividendos e fundamentalistas (BrAPI módulos)
 
 ## [0.3.0] — 2026-04-20

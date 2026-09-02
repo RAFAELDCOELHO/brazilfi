@@ -1,8 +1,10 @@
 """Provider B3: cotações/histórico/listagem via BrAPI.dev; opções via COTAHIST diário da B3."""
 from __future__ import annotations
 
+import io
 import os
 import zipfile
+from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -28,6 +30,7 @@ VALID_INTERVALS = {"1m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1w
 COTAHIST_URL = "https://bvmf.bmfbovespa.com.br/InstDados/SerHist/{name}"
 COTAHIST_CACHE_DIR = CACHE_ROOT / "cotahist"
 COTAHIST_LOOKBACK_DAYS = 10  # quantos dias recuar procurando o último pregão publicado
+COTAHIST_RECORD = "01"  # registro de cotação (00 = header, 99 = trailer)
 _SPOT_MARKET = "010"
 _OPTION_MARKETS = {"070": "call", "080": "put"}
 
@@ -49,6 +52,7 @@ class B3:
         >>> b3.history("PETR4", range_="1y", interval="1d")
         >>> b3.list_tickers(type_="stock", limit=20)
         >>> b3.options("PETR4")                       # cadeia de opções (sem token)
+        >>> b3.cotahist("PETR4", year=2025)           # OHLCV diário do ano (sem token)
     """
 
     def __init__(
@@ -236,6 +240,29 @@ class B3:
         df["expiry"] = pd.to_datetime(df["expiry"])
         return df.sort_values(["expiry", "kind", "strike"]).reset_index(drop=True)
 
+    def cotahist(self, ticker: str, year: int | None = None) -> pd.DataFrame:
+        """
+        OHLCV diário de um ativo à vista num ano, pelo COTAHIST anual da B3.
+
+        Não usa BrAPI nem token — é a alternativa oficial a `history()`. Preços
+        são os do pregão, sem ajuste por proventos. O arquivo anual tem ~70 MB
+        (cache local; anos passados nunca são rebaixados, o corrente expira em 24h).
+        """
+        ticker = ticker.upper()
+        year = year or date.today().year
+        name = f"COTAHIST_A{year}.ZIP"
+        max_age = 1 if year >= date.today().year else None
+        rows = [
+            {"date": date(int(ln[2:6]), int(ln[6:8]), int(ln[8:10])), **self._parse_prices(ln)}
+            for ln in self._iter_cotahist(name, max_age)
+            if ln[24:27] == _SPOT_MARKET and ln[12:24].strip() == ticker
+        ]
+        if not rows:
+            raise DataNotFoundError(f"{ticker} não aparece no COTAHIST de {year}")
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"])
+        return df.set_index("date").sort_index()
+
     # ---------- Internals ----------
 
     def _cotahist(self, on: str | date | None) -> tuple[list[str], date]:
@@ -253,16 +280,20 @@ class B3:
             f"Nenhum COTAHIST diário publicado nos últimos {COTAHIST_LOOKBACK_DAYS} dias"
         )
 
-    @staticmethod
-    def _read_cotahist(day: date) -> list[str]:
-        name = f"COTAHIST_D{day:%d%m%Y}.ZIP"
+    def _read_cotahist(self, day: date) -> list[str]:
         # Pregão passado nunca muda: cache permanente.
+        return list(self._iter_cotahist(f"COTAHIST_D{day:%d%m%Y}.ZIP", None))
+
+    @staticmethod
+    def _iter_cotahist(name: str, max_age_days: float | None) -> Iterator[str]:
+        """Linhas de cotação do ZIP, em streaming (o anual abre em ~400 MB de texto)."""
         path = cached_download(
-            COTAHIST_URL.format(name=name), COTAHIST_CACHE_DIR / name, max_age_days=None
+            COTAHIST_URL.format(name=name), COTAHIST_CACHE_DIR / name, max_age_days=max_age_days
         )
-        with zipfile.ZipFile(path) as zf:
-            raw = zf.read(zf.namelist()[0]).decode("latin-1")
-        return [ln for ln in raw.splitlines() if ln.startswith("01")]
+        with zipfile.ZipFile(path) as zf, zf.open(zf.namelist()[0]) as raw:
+            for line in io.TextIOWrapper(raw, encoding="latin-1"):
+                if line.startswith(COTAHIST_RECORD):
+                    yield line.rstrip("\r\n")
 
     @staticmethod
     def _especi(line: str) -> str:
@@ -270,27 +301,36 @@ class B3:
         tokens = line[39:49].split()
         return tokens[0] if tokens else ""
 
-    @staticmethod
-    def _parse_option(line: str, day: date) -> dict[str, Any]:
-        def money(start: int, end: int) -> float:
-            return int(line[start:end]) / 100
-
+    @classmethod
+    def _parse_option(cls, line: str, day: date) -> dict[str, Any]:
         return {
             "date": day,
             "ticker": line[12:24].strip(),
             "kind": _OPTION_MARKETS[line[24:27]],
-            "strike": money(188, 201),
+            "strike": int(line[188:201]) / 100,
             "expiry": date(int(line[202:206]), int(line[206:208]), int(line[208:210])),
+            **cls._parse_prices(line),
+            "isin": line[230:242],
+        }
+
+    @staticmethod
+    def _parse_prices(line: str) -> dict[str, Any]:
+        """Campos de preço/negócio comuns a qualquer registro 01 (2 casas implícitas)."""
+
+        def money(start: int, end: int) -> float:
+            return int(line[start:end]) / 100
+
+        return {
             "open": money(56, 69),
             "high": money(69, 82),
             "low": money(82, 95),
+            "avg": money(95, 108),
             "close": money(108, 121),
             "bid": money(121, 134),
             "ask": money(134, 147),
             "trades": int(line[147:152]),
             "quantity": int(line[152:170]),
             "volume": money(170, 188),
-            "isin": line[230:242],
         }
 
     def _check_free_tier(self, tickers: list[str]) -> None:

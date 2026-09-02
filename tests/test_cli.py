@@ -426,3 +426,38 @@ def test_ipea_commands(mock_ipea) -> None:
     assert result.exit_code == 0
     assert "PRECOS12_IPCAG12" in result.stdout
     mock_ipea.return_value.search.assert_called_once_with("ipca", freq="Mensal")
+
+
+@patch("brazilfi.cli.B3")
+def test_cotahist(mock_b3) -> None:
+    mock_b3.return_value.cotahist.return_value = pd.DataFrame(
+        {"open": [45.5], "high": [46.9], "low": [45.5], "close": [46.87], "trades": [75161],
+         "volume": [2.3e9]},
+        index=pd.to_datetime(["2026-09-01"]),
+    )
+    result = runner.invoke(app, ["cotahist", "petr4", "--ano", "2026"])
+    assert result.exit_code == 0
+    assert "01/09/2026" in result.stdout
+    mock_b3.return_value.cotahist.assert_called_once_with("PETR4", year=2026)
+
+
+@patch("brazilfi.cli.CVM")
+def test_carteira_and_fii(mock_cvm) -> None:
+    mock_cvm.return_value.carteira.return_value = pd.DataFrame(
+        {"date": [pd.Timestamp("2026-07-31")], "asset": ["ITUB3"], "asset_type": ["Ação ordinária"],
+         "issuer": [None], "market_value": [8496707.52], "weight_pct": [87.75]}
+    )
+    result = runner.invoke(app, ["carteira", "00102322000141", "--mes", "2026-07"])
+    assert result.exit_code == 0
+    assert "ITUB3" in result.stdout and "07/2026" in result.stdout
+    mock_cvm.return_value.carteira.assert_called_once_with("00102322000141", month="2026-07")
+
+    mock_cvm.return_value.fii.return_value = pd.DataFrame(
+        {"date": [pd.Timestamp("2026-07-01")], "patrimonio_liquido": [2.58e8],
+         "valor_patrimonial_cotas": [92.15], "total_numero_cotistas": [3332],
+         "percentual_rentabilidade_efetiva_mes": [0.0052],
+         "percentual_dividend_yield_mes": [0.0049]}
+    )
+    result = runner.invoke(app, ["fii", "00.332.266/0001-31", "--ano", "2026"])
+    assert result.exit_code == 0
+    assert "07/2026" in result.stdout and "0.49" in result.stdout

@@ -49,6 +49,9 @@ B3().quote("PETR4")
 # Opções de PETR4 negociadas no último pregão (B3, sem token)
 B3().options("PETR4")
 
+# OHLCV diário de 2025 pelo COTAHIST oficial (B3, sem token)
+B3().cotahist("PETR4", year=2025)
+
 # DRE consolidada 2025 do Banco do Brasil (CVM, código CVM 1023)
 CVM().dfp(1023, 2025, statement="DRE")
 
@@ -69,6 +72,8 @@ brazilfi pib --last 8
 brazilfi tesouro
 brazilfi quote PETR4,VALE3
 brazilfi opcoes PETR4 --tipo call
+brazilfi cotahist PETR4 --ano 2025
+brazilfi carteira 00.017.024/0001-53
 brazilfi curva-ima --indice "IMA-B 5+"
 brazilfi debentures --indexador "IPCA +"
 brazilfi fundos --search verde
@@ -89,9 +94,9 @@ Dados brasileiros estão espalhados em **APIs fragmentadas, mal documentadas e s
 | **IPEA (Ipeadata)** | ✅ | ❌ | ❌ | ❌ |
 | **IBGE (SIDRA)** | ✅ | ❌ | ✅ | ❌ |
 | **Tesouro Direto** | ✅ | ❌ | ❌ | ❌ |
-| **B3** (cotações, OHLCV, opções) | ✅ | ❌ | ❌ | ✅ |
+| **B3** (cotações, OHLCV, opções, COTAHIST) | ✅ | ❌ | ❌ | ✅ |
 | **ANBIMA** (curvas IMA, debêntures) | ✅ | ❌ | ❌ | ❌ |
-| **CVM** (fundos, DFP/ITR) | ✅ | ❌ | ❌ | ❌ |
+| **CVM** (fundos, carteiras, FII, DFP/ITR) | ✅ | ❌ | ❌ | ❌ |
 | **Modelos tipados (Pydantic)** | ✅ | ❌ | ❌ | ❌ |
 | **CLI integrada** | ✅ | ❌ | ❌ | ❌ |
 | **Async-ready** | ✅ | ❌ | ❌ | ❌ |
@@ -205,8 +210,22 @@ for q in quotes:
     print(f"{q.ticker} {direcao} R$ {q.price} ({q.change_pct}%)")
 ```
 
-> **Nota:** cotações e histórico usam a [BrAPI.dev](https://brapi.dev). Sem token, apenas
-> 4 tickers (PETR4, VALE3, ITUB4, MGLU3). Token gratuito libera todos os ativos.
+> **Nota:** `quote()` e `history()` usam a [BrAPI.dev](https://brapi.dev). Sem token, apenas
+> 4 tickers (PETR4, VALE3, ITUB4, MGLU3). Token gratuito libera todos os ativos. Para
+> histórico diário **sem token**, use `cotahist()` (abaixo).
+
+### Histórico diário oficial, sem token (B3, COTAHIST)
+
+```python
+from brazilfi import B3
+
+df = B3().cotahist("WEGE3", year=2025)   # qualquer ativo à vista; ~70 MB por ano, em cache
+print(df[["open", "high", "low", "close", "volume"]].tail())
+retorno_2025 = df["close"].iloc[-1] / df["close"].iloc[0] - 1
+```
+
+> Preços de pregão, sem ajuste por proventos (o COTAHIST traz o fator de cotação, não o
+> ajuste). Para série ajustada, `history()` via BrAPI.
 
 ### Cadeia de opções: calls de PETR4 por vencimento (B3)
 
@@ -253,6 +272,26 @@ rentab = cotas["quota"].iloc[-1] / cotas["quota"].iloc[0] - 1
 print(f"{fundo['name']}: {rentab:.2%} no ano, PL R$ {cotas['net_assets'].iloc[-1]:,.0f}")
 ```
 
+### O que tem dentro de um fundo (CVM, CDA)
+
+```python
+from brazilfi import CVM
+
+cart = CVM().carteira("00.102.322/0001-41")        # último CDA publicado (1–2 meses de atraso)
+print(cart[["asset_type", "asset", "issuer", "market_value", "weight_pct"]].head(10))
+print(cart.groupby("asset_type")["weight_pct"].sum().sort_values(ascending=False))
+```
+
+### Dividend yield mensal de um FII (CVM)
+
+```python
+from brazilfi import CVM
+
+fii = CVM().fii(2026, cnpj="00.332.266/0001-31")   # informe mensal: PL, cota, cotistas, DY
+print(fii.set_index("date")[["patrimonio_liquido", "valor_patrimonial_cotas",
+                             "percentual_dividend_yield_mes"]])
+```
+
 ### Margem líquida pela DFP (CVM)
 
 ```python
@@ -281,9 +320,9 @@ print(itr[itr["account"] == "3.01"][["period_start", "period_end", "value"]])
 | ✅ **IPEA** (Ipeadata) | ~3.600 séries macro, regionais e sociais; busca no catálogo | `ipeadata.gov.br` |
 | ✅ **IBGE** (SIDRA) | PIB, PNAD, IPCA, população | `servicodados.ibge.gov.br` |
 | ✅ **Tesouro Direto** | Títulos ativos + histórico | `tesourotransparente.gov.br` |
-| ✅ **B3** (BrAPI.dev + COTAHIST) | Cotações, histórico OHLCV, listagem, opções | `brapi.dev`, `bvmf.bmfbovespa.com.br` |
+| ✅ **B3** (BrAPI.dev + COTAHIST) | Cotações, histórico OHLCV (com e sem token), listagem, opções | `brapi.dev`, `bvmf.bmfbovespa.com.br` |
 | ✅ **ANBIMA** | Curvas de toda a família IMA (IMA-B, IMA-B 5/5+, IRF-M, IMA-S, IMA-GERAL), debêntures no secundário | `anbima.com.br` |
-| ✅ **CVM** (dados abertos) | Cadastro de fundos e cias abertas, cota diária, DFP, ITR | `dados.cvm.gov.br` |
+| ✅ **CVM** (dados abertos) | Cadastro de fundos e cias abertas, cota diária, carteiras (CDA), informes de FII, DFP, ITR | `dados.cvm.gov.br` |
 | 🔜 **ANBIMA** *(v0.5)* | Debêntures, IMA-B 5 e IMA-B 5+ | — |
 
 ---
@@ -311,10 +350,13 @@ brazilfi --help
 | `history PETR4 [--range 1y] [--interval 1d]` | Histórico OHLCV (B3) |
 | `tickers [--type stock\|fund\|bdr] [--search X] [--limit N]` | Lista tickers (B3) |
 | `opcoes PETR4 [--data YYYY-MM-DD] [--tipo call\|put]` | Opções negociadas no pregão (B3) |
+| `cotahist PETR4 [--ano 2025]` | OHLCV diário pelo COTAHIST anual, sem token (B3) |
 | `curva-ima [--indice IMA-B]` | Curva de juros de um índice IMA (ANBIMA) |
 | `debentures [--data] [--search X] [--indexador "IPCA +"]` | Debêntures no mercado secundário (ANBIMA) |
 | `fundos [--search X] [--limit N]` | Classes de fundos em funcionamento (CVM) |
 | `cotas CNPJ [--start] [--end]` | Cota diária de um fundo (CVM) |
+| `carteira CNPJ [--mes 2026-07] [--top N]` | Composição da carteira de um fundo (CVM, CDA) |
+| `fii CNPJ --ano 2026` | Informe mensal de um FII (CVM) |
 | `dfp EMPRESA --ano 2025 [--demonstracao DRE] [--individual] [--itr]` | DFP/ITR de uma companhia (CVM) |
 
 Erros de rede ou de dados saem como uma linha `Erro: ...` com exit code 1, sem traceback.
@@ -345,7 +387,6 @@ Princípios:
 
 ## Roadmap
 
-- **v0.6** — CVM: informes de FII, composição de carteira (CDA)
 - **v1.0** — API estável, docs completas, async nativo
 
 ---
