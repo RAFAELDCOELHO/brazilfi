@@ -280,6 +280,8 @@ class CVM:
         df = pd.concat(frames, ignore_index=True)
         df["asset"] = self._coalesce(df, CDA_ASSET_CANDIDATES)
         df["issuer"] = self._coalesce(df, CDA_ISSUER_CANDIDATES)
+        for col in ("asset", "issuer"):
+            df[col] = df[col].astype(object).where(df[col].notna(), None)  # NaN → None
         df = df.drop(columns=[c for c in df.columns if c.startswith("_")])
         df["cnpj"] = df["cnpj"].map(_digits)
         for col in ("date", "maturity", "confidential_until"):
