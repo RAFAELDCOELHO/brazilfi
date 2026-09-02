@@ -1,7 +1,6 @@
 """Provider Tesouro Direto — títulos disponíveis + histórico."""
 from __future__ import annotations
 
-import io
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -14,19 +13,8 @@ from brazilfi.core.exceptions import DataNotFoundError, ProviderError
 from brazilfi.core.http_client import HttpClient
 from brazilfi.core.models import Bond
 
-# Endpoints oficiais de CSV (taxas/preços atuais). Endpoint JSON antigo foi descontinuado.
-TESOURO_CSV_INVESTIR = (
-    "https://www.tesourodireto.com.br/documents/d/guest/rendimento-investir-csv"
-    "?download=true"
-)
-TESOURO_CSV_RESGATAR = (
-    "https://www.tesourodireto.com.br/documents/d/guest/rendimento-resgatar-csv"
-    "?download=true"
-)
-# Mantido para compatibilidade com testes existentes
-TESOURO_URL = TESOURO_CSV_INVESTIR
-
-# CSV histórico (Tesouro Transparente)
+# CSV histórico oficial (Tesouro Transparente, dados abertos). O endpoint JSON
+# ao-vivo do tesourodireto.com.br fica atrás de Cloudflare e não é usado.
 HISTORICO_URL = (
     "https://www.tesourotransparente.gov.br/ckan/dataset/"
     "df56aa42-484a-4a59-8184-7676580c81e3/resource/"
@@ -37,18 +25,16 @@ CACHE_DIR = Path.home() / ".cache" / "brazilfi"
 CACHE_FILE = CACHE_DIR / "tesouro_historico.csv"
 CACHE_MAX_AGE_DAYS = 1  # recarrega se tiver mais de 1 dia
 
+# O gov.br rejeita alguns User-Agents genéricos.
 BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
         "Chrome/131.0.0.0 Safari/537.36"
     ),
-    "Accept": "application/json, text/plain, */*",
+    "Accept": "text/csv, text/plain, */*",
     "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
-    "Referer": "https://www.tesourodireto.com.br/",
-    "Origin": "https://www.tesourodireto.com.br",
 }
-
 
 
 class TesouroDireto:
@@ -151,52 +137,6 @@ class TesouroDireto:
         except Exception:
             return None
 
-    def _fetch_csv(self, url: str) -> pd.DataFrame:
-        """Baixa e parseia CSV do Tesouro Direto."""
-        resp = httpx.get(url, timeout=30.0, headers=BROWSER_HEADERS, follow_redirects=True)
-        if resp.status_code >= 400:
-            return pd.DataFrame()
-        try:
-            df: pd.DataFrame = pd.read_csv(
-                io.StringIO(resp.text),
-                sep=";",
-                decimal=",",
-                encoding="utf-8",
-            )
-            return df
-        except Exception:
-            try:
-                df2 = pd.read_csv(
-                    io.StringIO(resp.content.decode("latin-1")),
-                    sep=";",
-                    decimal=",",
-                )
-                assert isinstance(df2, pd.DataFrame)
-                return df2
-            except Exception:
-                empty: pd.DataFrame = pd.DataFrame()
-                return empty
-
-    @staticmethod
-    def _clean_rate(val: Any) -> Decimal | None:
-        if val is None or pd.isna(val):
-            return None
-        s = str(val).replace("%", "").replace(",", ".").strip()
-        try:
-            return Decimal(s)
-        except Exception:
-            return None
-
-    @staticmethod
-    def _clean_price(val: Any) -> Decimal | None:
-        if val is None or pd.isna(val):
-            return None
-        s = str(val).replace("R$", "").replace(".", "").replace(",", ".").strip()
-        try:
-            return Decimal(s)
-        except Exception:
-            return None
-
     def available_dataframe(self) -> pd.DataFrame:
         """Mesmo que `available()`, mas como DataFrame pronto para análise."""
         bonds = self.available()
@@ -256,8 +196,7 @@ class TesouroDireto:
 
     def clear_cache(self) -> None:
         """Remove o cache local do CSV."""
-        if CACHE_FILE.exists():
-            CACHE_FILE.unlink()
+        CACHE_FILE.unlink(missing_ok=True)
 
     # ---------- Internals ----------
 
@@ -281,14 +220,24 @@ class TesouroDireto:
     def _download_historico(self) -> None:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         # Stream pra não estourar memória (CSV ~100MB)
-        with httpx.stream("GET", HISTORICO_URL, timeout=120.0) as resp:
+        tmp = CACHE_FILE.with_suffix(".csv.part")
+        with httpx.stream(
+            "GET",
+            HISTORICO_URL,
+            timeout=120.0,
+            headers=BROWSER_HEADERS,
+            follow_redirects=True,
+        ) as resp:
             if resp.status_code >= 400:
                 raise ProviderError(
                     f"Falha ao baixar histórico Tesouro: HTTP {resp.status_code}"
                 )
-            with CACHE_FILE.open("wb") as f:
+            with tmp.open("wb") as f:
                 for chunk in resp.iter_bytes():
                     f.write(chunk)
+        # Só substitui o cache depois do download completo: um Ctrl+C no meio
+        # não deixa um CSV truncado "fresco" por 24h.
+        tmp.replace(CACHE_FILE)
 
     @staticmethod
     def _normalize_historico(df: pd.DataFrame) -> pd.DataFrame:
@@ -309,52 +258,6 @@ class TesouroDireto:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], format="%d/%m/%Y", errors="coerce")
         return df
-
-    @staticmethod
-    def _parse_bond(d: dict[str, Any]) -> Bond:
-        name = d.get("nm", "").strip()
-        bond_type = TesouroDireto._infer_bond_type(name)
-        index = TesouroDireto._infer_index(name)
-
-        maturity_str = d.get("mtrtyDt", "")
-        maturity = datetime.fromisoformat(maturity_str.replace("Z", "")).date()
-
-        def _dec(key: str) -> Decimal | None:
-            v = d.get(key)
-            if v in (None, 0, 0.0):
-                return None
-            return Decimal(str(v))
-
-        is_available = d.get("invstmtStbl", "").lower() in ("disponível", "disponivel")
-
-        return Bond(
-            name=name,
-            bond_type=bond_type,
-            maturity=maturity,
-            index=index,
-            buy_rate=_dec("anulInvstmtRate"),
-            sell_rate=_dec("anulRedRate"),
-            buy_price=_dec("untrInvstmtVal"),
-            sell_price=_dec("untrRedVal"),
-            min_investment=_dec("minInvstmtAmt"),
-            isin=d.get("isinCd"),
-            available=is_available,
-        )
-
-    @staticmethod
-    def _infer_bond_type(name: str) -> str:
-        n = name.lower()
-        if "prefixado" in n and "juros" in n:
-            return "NTN-F"
-        if "prefixado" in n:
-            return "LTN"
-        if "ipca" in n and "principal" in n:
-            return "NTN-B Principal"
-        if "ipca" in n:
-            return "NTN-B"
-        if "selic" in n:
-            return "LFT"
-        return "Desconhecido"
 
     @staticmethod
     def _infer_index(name: str) -> str | None:

@@ -5,6 +5,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 from typer.testing import CliRunner
 
 from brazilfi.cli import app
@@ -258,3 +259,24 @@ def test_tickers(mock_b3) -> None:
     mock_b3.return_value.list_tickers.return_value = df
     result = runner.invoke(app, ["tickers", "--limit", "10"])
     assert result.exit_code == 0
+
+
+# ---------- main(): erro limpo ----------
+
+
+def test_main_prints_clean_error_and_exits_1(capsys) -> None:
+    from unittest.mock import patch
+
+    from brazilfi.cli import main
+    from brazilfi.core.exceptions import DataNotFoundError
+
+    with (
+        patch("brazilfi.cli.app", side_effect=DataNotFoundError("Série SGS 11 sem dados")),
+        pytest.raises(SystemExit) as exc,
+    ):
+        main()
+    assert exc.value.code == 1
+    out = capsys.readouterr().out
+    assert "Erro:" in out
+    assert "sem dados" in out
+    assert "Traceback" not in out

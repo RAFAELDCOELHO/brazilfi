@@ -10,20 +10,15 @@ from brazilfi.core.http_client import HttpClient
 from brazilfi.core.models import SeriesPoint, TimeSeries
 
 # Agregados SIDRA mais usados
-AGREGADOS = {
+AGREGADOS: dict[str, dict[str, Any]] = {
+    # O agregado 1620 só tem a variável 583: índice de volume encadeado
+    # (média 1995 = 100). Não existe "valores correntes" nem uma 584 nele.
     "pib_trimestral": {
         "agregado": 1620,
         "variavel": 583,
         "classificacao": "11255[90707]",
-        "name": "PIB a preços de mercado (valores correntes)",
-        "unit": "milhões de BRL",
-    },
-    "pib_volume": {
-        "agregado": 1620,
-        "variavel": 584,
-        "classificacao": "11255[90707]",
-        "name": "PIB — variação de volume",
-        "unit": "índice",
+        "name": "PIB — índice de volume trimestral (média 1995 = 100)",
+        "unit": "número-índice",
     },
     "desemprego": {
         "agregado": 4099,
@@ -43,11 +38,12 @@ AGREGADOS = {
         "name": "IPCA — variação mensal",
         "unit": "%",
     },
-    "ipca_indice": {
+    # 7060 tem 63 (mensal), 69 (acum. no ano), 2265 (acum. 12m) e 66 (peso).
+    "ipca_acum_12m": {
         "agregado": 7060,
-        "variavel": 2266,
-        "name": "IPCA — número-índice",
-        "unit": "índice (dez/1993=100)",
+        "variavel": 2265,
+        "name": "IPCA — variação acumulada em 12 meses",
+        "unit": "%",
     },
     "populacao_estimada": {
         "agregado": 6579,
@@ -56,6 +52,11 @@ AGREGADOS = {
         "unit": "habitantes",
     },
 }
+
+# Agregados trimestrais: o SIDRA codifica o período como YYYYQQ ("202602" =
+# 2º trimestre de 2026), o mesmo formato de um mês — só a periodicidade
+# (GET /agregados/<n>/metadados → periodicidade.frequencia) desambigua.
+AGREGADOS_TRIMESTRAIS = {1620, 4099}
 
 # Níveis territoriais servidos por cada agregado, conforme
 # GET /agregados/<agregado>/metadados → nivelTerritorial.Administrativo
@@ -90,14 +91,14 @@ class IBGE:
 
     # ---------- Convenience ----------
 
-    def pib(self, last: int = 8, volume: bool = False) -> TimeSeries:
+    def pib(self, last: int = 8) -> TimeSeries:
         """
-        PIB trimestral. `volume=True` retorna variação de volume.
+        PIB trimestral — índice de volume encadeado (média 1995 = 100).
 
+        Variação anual: `ts.to_dataframe()["value"].pct_change(4)`.
         Sem `localidade`: o SIDRA só serve o agregado 1620 em N1 (Brasil).
         """
-        key = "pib_volume" if volume else "pib_trimestral"
-        return self._get_named(key, last=last)
+        return self._get_named("pib_trimestral", last=last)
 
     def desemprego(self, last: int = 4, localidade: str = "N1[all]") -> TimeSeries:
         """
@@ -109,16 +110,16 @@ class IBGE:
         return self._get_named("desemprego", last=last, localidade=localidade)
 
     def ipca(
-        self, last: int = 12, indice: bool = False, localidade: str = "N1[all]"
+        self, last: int = 12, acum_12m: bool = False, localidade: str = "N1[all]"
     ) -> TimeSeries:
         """
-        IPCA mensal. `indice=True` retorna número-índice em vez da variação.
+        IPCA mensal. `acum_12m=True` retorna a variação acumulada em 12 meses.
 
         `localidade` aceita N1, N6 (município) e N7 (região metropolitana) — o
         IPCA é apurado por amostra de municípios/RMs, então **não existe nível
         de UF (N3)**. Ex: `ipca(localidade="N6[3550308]")` → São Paulo-SP.
         """
-        key = "ipca_indice" if indice else "ipca_mensal"
+        key = "ipca_acum_12m" if acum_12m else "ipca_mensal"
         return self._get_named(key, last=last, localidade=localidade)
 
     def populacao(self, last: int = 5, localidade: str = "N1[all]") -> TimeSeries:
@@ -140,6 +141,7 @@ class IBGE:
         classificacao: str | None = None,
         name: str | None = None,
         unit: str = "",
+        trimestral: bool | None = None,
     ) -> TimeSeries:
         """
         Acesso genérico a qualquer agregado SIDRA.
@@ -151,6 +153,8 @@ class IBGE:
             periodos: alternativa a `last` — formato "202401-202412" ou "202401"
             localidade: padrão N1[all] (Brasil inteiro)
             name/unit: opcional, sobrescreve metadados
+            trimestral: o período "YYYYQQ" é trimestre, não mês. Default: consulta
+                `AGREGADOS_TRIMESTRAIS`; passe True para outros agregados trimestrais
 
         Raises:
             ValueError: se o agregado não for servido no nível territorial pedido
@@ -171,8 +175,10 @@ class IBGE:
                 f"SIDRA agregado={agregado} var={variavel} sem dados"
             )
 
+        if trimestral is None:
+            trimestral = agregado in AGREGADOS_TRIMESTRAIS
         variavel_info = data[0]
-        points = self._parse_sidra(variavel_info)
+        points = self._parse_sidra(variavel_info, trimestral=trimestral)
 
         return TimeSeries(
             code=f"{agregado}.{variavel}",
@@ -190,8 +196,8 @@ class IBGE:
         cfg = AGREGADOS[key]
         classificacao = cfg.get("classificacao")
         return self.agregado(
-            agregado=int(cfg["agregado"]),  # type: ignore[call-overload]
-            variavel=int(cfg["variavel"]),  # type: ignore[call-overload]
+            agregado=int(cfg["agregado"]),
+            variavel=int(cfg["variavel"]),
             last=last,
             localidade=localidade,
             classificacao=str(classificacao) if classificacao else None,
@@ -213,7 +219,9 @@ class IBGE:
             )
 
     @staticmethod
-    def _parse_sidra(variavel_block: dict[str, Any]) -> list[SeriesPoint]:
+    def _parse_sidra(
+        variavel_block: dict[str, Any], trimestral: bool = False
+    ) -> list[SeriesPoint]:
         """Extrai pontos de um bloco SIDRA (estrutura aninhada horrível)."""
         points: list[SeriesPoint] = []
         resultados = variavel_block.get("resultados", [])
@@ -224,7 +232,7 @@ class IBGE:
                     if valor in (None, "...", "..", "-", "X", "x", ""):
                         continue
                     try:
-                        dt = IBGE._parse_period(periodo)
+                        dt = IBGE._parse_period(periodo, trimestral=trimestral)
                         val = Decimal(str(valor).replace(",", "."))
                         points.append(SeriesPoint(date=dt, value=val))
                     except (ValueError, TypeError, InvalidOperation):
@@ -234,11 +242,12 @@ class IBGE:
         return points
 
     @staticmethod
-    def _parse_period(p: str) -> date:
+    def _parse_period(p: str, trimestral: bool = False) -> date:
         """
         Converte períodos SIDRA para date:
           "2024"        → 2024-01-01
-          "202404"      → 2024-04-01
+          "202404"      → 2024-04-01 (mês)
+          "202404"      → 2024-10-01 se `trimestral` (4º trimestre)
           "2024.I"      → 2024-01-01 (trimestre)
           "2024.II"     → 2024-04-01
           "2024.III"    → 2024-07-01
@@ -250,7 +259,12 @@ class IBGE:
             month = tri_map.get(tri, 1)
             return date(int(year_str), month, 1)
         if len(p) == 6:
-            return date(int(p[:4]), int(p[4:6]), 1)
+            n = int(p[4:6])
+            if trimestral:
+                if not 1 <= n <= 4:
+                    raise ValueError(f"Trimestre inválido no período SIDRA: {p}")
+                return date(int(p[:4]), (n - 1) * 3 + 1, 1)
+            return date(int(p[:4]), n, 1)
         if len(p) == 4:
             return date(int(p), 1, 1)
         raise ValueError(f"Período SIDRA não reconhecido: {p}")

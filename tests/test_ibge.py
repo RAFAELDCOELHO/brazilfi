@@ -1,6 +1,8 @@
 """Testes do provider IBGE."""
 from __future__ import annotations
 
+from datetime import date
+
 import httpx
 import pytest
 import respx
@@ -100,7 +102,7 @@ def test_agregado_generico() -> None:
                             "series": [
                                 {
                                     "localidade": {"id": "1", "nome": "Brasil"},
-                                    "serie": {"202504": "7.2", "202507": "6.9"},
+                                    "serie": {"202501": "7.2", "202502": "6.9"},
                                 }
                             ],
                         }
@@ -178,7 +180,7 @@ def test_desemprego_uf() -> None:
                             "series": [
                                 {
                                     "localidade": {"id": "35", "nome": "São Paulo"},
-                                    "serie": {"202504": "6.8", "202507": "6.5"},
+                                    "serie": {"202501": "6.8", "202502": "6.5"},
                                 }
                             ],
                         }
@@ -256,3 +258,52 @@ def test_agregado_desconhecido_nao_valida_nivel() -> None:
         )
         with pytest.raises(DataNotFoundError):
             IBGE().agregado(9999, 1, last=1, localidade="N6[3550308]")
+
+
+# ---------- Periodicidade trimestral ----------
+
+
+def test_parse_period_trimestral() -> None:
+    # SIDRA codifica trimestre como YYYYQQ, indistinguível de um mês sem contexto
+    assert IBGE._parse_period("202601", trimestral=True) == date(2026, 1, 1)
+    assert IBGE._parse_period("202602", trimestral=True) == date(2026, 4, 1)
+    assert IBGE._parse_period("202604", trimestral=True) == date(2026, 10, 1)
+    assert IBGE._parse_period("202604") == date(2026, 4, 1)  # mensal
+    with pytest.raises(ValueError):
+        IBGE._parse_period("202605", trimestral=True)
+
+
+@respx.mock
+def test_pib_periodos_sao_trimestres() -> None:
+    respx.get(url__regex=rf"{BASE}/1620/periodos/-2/variaveis/583.*").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{
+                "id": "583",
+                "variavel": "Série encadeada do índice de volume trimestral",
+                "unidade": "Número-índice",
+                "resultados": [{"series": [{"serie": {"202601": "194.53", "202602": "199.05"}}]}],
+            }],
+        )
+    )
+    ts = IBGE().pib(last=2)
+    assert [p.date for p in ts.points] == [date(2026, 1, 1), date(2026, 4, 1)]
+
+
+@respx.mock
+def test_ipca_acum_12m_usa_variavel_2265() -> None:
+    route = respx.get(url__regex=rf"{BASE}/7060/periodos/-1/variaveis/2265.*").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{
+                "id": "2265",
+                "variavel": "IPCA - Variação acumulada em 12 meses",
+                "unidade": "%",
+                "resultados": [{"series": [{"serie": {"202607": "4.44"}}]}],
+            }],
+        )
+    )
+    ts = IBGE().ipca(last=1, acum_12m=True)
+    assert route.called
+    assert ts.points[0].date == date(2026, 7, 1)
+    assert float(ts.points[0].value) == 4.44

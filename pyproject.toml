@@ -1,12 +1,15 @@
 [project]
 name = "brazilfi"
-version = "0.3.0"
-description = "Unified Python SDK for Brazilian financial market APIs (Bacen, B3, CVM, Tesouro, IBGE)"
+dynamic = ["version"]
+description = "Unified Python SDK for Brazilian financial market APIs (Bacen, IBGE, Tesouro Direto, B3, ANBIMA)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Rafael", email = "rafael@example.com" }]
-keywords = ["finance", "brazil", "b3", "bovespa", "bacen", "selic", "ipca", "cvm"]
+authors = [{ name = "Rafael Coelho" }]
+keywords = [
+    "finance", "brazil", "b3", "bovespa", "bacen", "selic", "ipca", "ibge",
+    "tesouro-direto", "anbima", "sdk",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -14,6 +17,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Office/Business :: Financial",
 ]
 dependencies = [
@@ -38,16 +42,20 @@ examples = [
 ]
 
 [project.scripts]
-brazilfi = "brazilfi.cli:app"
+brazilfi = "brazilfi.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/SEU_USER/brazilfi"
-Repository = "https://github.com/SEU_USER/brazilfi"
-Issues = "https://github.com/SEU_USER/brazilfi/issues"
+Homepage = "https://github.com/RAFAELDCOELHO/brazilfi"
+Repository = "https://github.com/RAFAELDCOELHO/brazilfi"
+Issues = "https://github.com/RAFAELDCOELHO/brazilfi/issues"
+Changelog = "https://github.com/RAFAELDCOELHO/brazilfi/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/brazilfi/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/brazilfi"]
