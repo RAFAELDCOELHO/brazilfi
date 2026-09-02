@@ -1,14 +1,14 @@
 [project]
 name = "brazilfi"
 dynamic = ["version"]
-description = "Unified Python SDK for Brazilian financial market APIs (Bacen, IBGE, Tesouro Direto, B3, ANBIMA)"
+description = "Unified Python SDK for Brazilian financial market APIs (Bacen, IBGE, Tesouro Direto, B3, ANBIMA, CVM)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Rafael Coelho" }]
 keywords = [
     "finance", "brazil", "b3", "bovespa", "bacen", "selic", "ipca", "ibge",
-    "tesouro-direto", "anbima", "sdk",
+    "tesouro-direto", "anbima", "cvm", "fundos", "dfp", "opcoes", "sdk",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -73,8 +73,10 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "W", "UP", "B", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-# A fixture reproduz linhas do TXT da ANBIMA, que são longas por natureza.
+# Fixtures reproduzem linhas reais dos arquivos da ANBIMA, da CVM e do COTAHIST (245 colunas).
 "tests/test_anbima.py" = ["E501"]
+"tests/test_b3.py" = ["E501"]
+"tests/test_cvm.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"
